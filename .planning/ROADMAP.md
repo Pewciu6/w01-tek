@@ -47,7 +47,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `run.sh test` passes with no LLM key, no ROS runtime and no GPU, and fails if anything outside the experiment directory imports it or if `ros/deploy.sh` could ship it
   4. Vendor and tracing keys are read only from the gitignored `.env`; the committed `config.toml` template contains placeholders, and a test rejects secret-looking values in tracked config
 
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans executed
 
 Plans:
 **Wave 1**
@@ -65,7 +65,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 01-05-PLAN.md — Two-machine verification record (x86-64 laptop and aarch64 remote GPU dev box)
+- [x] 01-05-PLAN.md — Two-machine verification record (x86-64 laptop and aarch64 remote GPU dev box)
 
 ### Phase 2: Wojtek Talks
 
@@ -139,7 +139,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Isolated RAI Environment | 4/5 | In Progress|  |
+| 1. Isolated RAI Environment | 5/5 | In Progress|  |
 | 2. Wojtek Talks | 0/TBD | Not started | - |
 | 3. Safe Walking | 0/TBD | Not started | - |
 | 4. Seeing and Self-Report | 0/TBD | Not started | - |

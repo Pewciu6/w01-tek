@@ -39,7 +39,7 @@ Requirements for initial release. Each maps to roadmap phases.
   tool argument parsing, velocity clamping, config loading and whoami
   assembly
 
-- [ ] **FOUND-07**: The experiment's container/environment builds and runs on
+- [x] **FOUND-07**: The experiment's container/environment builds and runs on
   both the x86-64 laptop and the aarch64 remote GPU dev box (multi-arch
   image or arch-agnostic install), so sim + agent can run on either
 
@@ -182,7 +182,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FOUND-04 | Phase 1 | Complete |
 | FOUND-05 | Phase 2 | Pending |
 | FOUND-06 | Phase 1 | Complete |
-| FOUND-07 | Phase 1 | Pending |
+| FOUND-07 | Phase 1 | Complete |
 | EMB-01 | Phase 2 | Pending |
 | EMB-02 | Phase 2 | Pending |
 | HRI-01 | Phase 2 | Pending |
