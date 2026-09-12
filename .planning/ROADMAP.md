@@ -26,7 +26,7 @@ type and observe, not a layer waiting for the next layer.
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Isolated RAI Environment** - Pinned, self-contained RAI experiment that joins the running sim's ROS graph
+- [x] **Phase 1: Isolated RAI Environment** - Pinned, self-contained RAI experiment that joins the running sim's ROS graph (completed 2026-09-12)
 - [ ] **Phase 2: Wojtek Talks** - Text chat with an agent that knows it is Wojtek and what it cannot do
 - [ ] **Phase 3: Safe Walking** - Typed walking commands behind a velocity arbiter the agent cannot bypass
 - [ ] **Phase 4: Seeing and Self-Report** - "What do you see?" and "Where are you?" answered from live sim data
@@ -47,7 +47,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `run.sh test` passes with no LLM key, no ROS runtime and no GPU, and fails if anything outside the experiment directory imports it or if `ros/deploy.sh` could ship it
   4. Vendor and tracing keys are read only from the gitignored `.env`; the committed `config.toml` template contains placeholders, and a test rejects secret-looking values in tracked config
 
-**Plans:** 5/5 plans executed
+**Plans:** 5/5 plans complete
 
 Plans:
 **Wave 1**
@@ -139,7 +139,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Isolated RAI Environment | 5/5 | In Progress|  |
+| 1. Isolated RAI Environment | 5/5 | Complete    | 2026-09-12 |
 | 2. Wojtek Talks | 0/TBD | Not started | - |
 | 3. Safe Walking | 0/TBD | Not started | - |
 | 4. Seeing and Self-Report | 0/TBD | Not started | - |
