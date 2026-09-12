@@ -7,10 +7,15 @@ Covers the four behaviours this module promises:
      (the rclpy/rai imports inside list_topics() are function-local)
   4. wojtek_rai.topics.main is callable and accepts an optional argv sequence
 
-This suite needs no ROS 2, no LLM key, and no GPU (FOUND-06).
+This suite needs no ROS 2, no LLM key, and no GPU (FOUND-06) -- with one
+documented exception: `test_main_is_callable_with_optional_argv` below
+performs real ROS 2 I/O and is marked `ros_io` accordingly (see WR-02 in
+01-REVIEW.md).
 """
 
 import sys
+
+import pytest
 
 import wojtek_rai.topics as topics
 
@@ -51,6 +56,8 @@ def test_import_does_not_pull_in_rclpy():
     assert "rai" not in sys.modules
 
 
+@pytest.mark.ros_io
+@pytest.mark.timeout(30)
 def test_main_is_callable_with_optional_argv():
     # Whether discovery actually succeeds depends on whether this process
     # has a live ROS 2 environment (it does when run.sh runs this suite
@@ -59,6 +66,18 @@ def test_main_is_callable_with_optional_argv():
     # always visible) -- the contract this test enforces is only that
     # main() is callable, accepts an optional argv, and always returns an
     # int exit code rather than raising, per <behavior> in the plan.
+    #
+    # [WR-02 fix] This is the only test in the suite that opens a real
+    # rclpy connector (ROS2Connector -> rclpy.init/node/shutdown), and
+    # docs/VERIFICATION.md's Attempt A already caught a real DDS
+    # multicast-loopback shutdown defect that hung exactly this class of
+    # test for 31 minutes on real hardware before being killed. The
+    # `timeout(30)` guard turns a repeat of that defect into a fast, clear
+    # failure instead of a silent multi-minute stall; `ros_io` lets a
+    # profile that cannot tolerate any live ROS I/O deselect just this one
+    # test via `-m "not ros_io"` while keeping the rest of the suite's
+    # model-free guarantee intact. The default `run.sh test` invocation
+    # applies no `-m` filter, so this test still runs by default.
     assert callable(topics.main)
     result = topics.main([])
     assert isinstance(result, int)

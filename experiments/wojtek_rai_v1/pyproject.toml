@@ -16,12 +16,30 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
+    "pytest-timeout>=2.3.1",
     "pyyaml>=6",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+# [WR-02 fix] run.sh's container_py() sets PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+# (see its comment: the --system-site-packages venv also sees the
+# container's apt-installed ROS pytest plugins, built against a different
+# pytest and incompatible with setuptools-entrypoint autoload). That means
+# pytest-timeout must be loaded explicitly here rather than relying on
+# autoload picking up its entry point.
+addopts = "-p pytest_timeout"
+# ros_io: the one marker that opts a test out of this suite's model-free
+# guarantee (no rclpy, no LLM key, no GPU -- FOUND-06) by performing real
+# ROS 2 I/O (rclpy init/node/shutdown). A profile that cannot tolerate any
+# live ROS I/O can deselect it with `-m "not ros_io"`; the default run
+# (run.sh test) keeps it included.
+markers = [
+    "ros_io: test performs real ROS 2 I/O (rclpy init/node/shutdown)",
+]
 
 [tool.hatch.build.targets.wheel]
 # The project name normalizes to "wojtek_rai_v1"; the package directory is
