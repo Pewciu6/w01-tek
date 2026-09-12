@@ -66,3 +66,33 @@ def test_build_target_guards_on_missing_colcon(experiment_dir):
         "the failure message when it is not, matching the sibling "
         "experiment's guard"
     )
+
+
+# T-01-13 (plan 01-03 threat register): credentials enter run.sh from the
+# gitignored .env and are forwarded into the container by NAME only. A
+# shell trace (`set -x`, `set -o xtrace`, `bash -x`) would print every
+# expanded command line -- including any credential value that ever gets
+# interpolated by a future edit -- into the terminal or a CI log. The
+# mitigation plan promised this prohibition is grep-asserted, not just
+# stated in a comment; this is that assertion.
+SHELL_TRACE_RE = re.compile(
+    r"(?:^|[;&|(\s])set\s+(?:-[a-wyzA-Z]*x[a-zA-Z]*|-o\s+xtrace)\b"
+    r"|(?:^|[;&|(\s])(?:bash|sh)\s+(?:-[a-wyzA-Z]*)?-?x\b"
+    r"|\bBASH_XTRACEFD\b|\bSHELLOPTS=.*xtrace",
+    re.MULTILINE,
+)
+
+
+def test_run_sh_never_enables_shell_trace(experiment_dir):
+    # Self-check first: the pattern must actually catch the shapes it
+    # exists to catch, otherwise this guard would pass vacuously (T-01-17).
+    for bad in ("set -x", "set -euxo pipefail", "set -o xtrace",
+                "  bash -x foo.sh", "exec bash -ex", "export BASH_XTRACEFD=3"):
+        assert SHELL_TRACE_RE.search(bad), f"guard regex misses {bad!r}"
+    for ok in ("set -euo pipefail", "set -eo pipefail", "bash -s -- \"$@\"",
+               "bash -c 'x=1'", "docker exec -i wojtek_robot bash -s"):
+        assert not SHELL_TRACE_RE.search(ok), f"guard regex false-positive on {ok!r}"
+
+    live = non_comment_lines(run_sh_text(experiment_dir))
+    hits = [m.group(0).strip() for m in SHELL_TRACE_RE.finditer(live)]
+    assert not hits, f"run.sh enables a shell trace (would leak credential values): {hits}"
