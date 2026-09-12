@@ -71,25 +71,37 @@ PRODUCTION_ROOTS = ("ros", "training")
 _RSYNC_FLAGS_WITH_VALUE = {"--exclude"}
 
 
-def _grep_rl(pattern: str, targets: list[str], exclude_dir: str | None = None) -> list[str]:
-    """Run `grep -rl -E pattern` over repo-root-relative `targets`.
+def _grep_rl(
+    pattern: str,
+    targets: list[str],
+    exclude_dir: str | None = None,
+    cwd: Path | None = None,
+) -> list[str]:
+    """Run `grep -rl -E pattern` over `cwd`-relative `targets`.
 
-    Returns the matching file paths (relative to REPO_ROOT). Asserts at
-    least one target actually exists on disk before running grep: grep's
-    own "no matches" (exit 1) and "nothing to search" cases are otherwise
+    `cwd` defaults to REPO_ROOT (the real production-tree scans this file
+    runs). The two boundary-probe tests below pass pytest's own `tmp_path`
+    instead, so their synthetic sibling-directory fixtures never touch the
+    live repository tree under test (WR-01) -- this parameter is what makes
+    that possible without duplicating the grep-invocation logic.
+
+    Returns the matching file paths (relative to `cwd`). Asserts at least
+    one target actually exists on disk before running grep: grep's own "no
+    matches" (exit 1) and "nothing to search" cases are otherwise
     indistinguishable, and a guard that silently scans an empty set is
     worse than no guard at all.
     """
-    existing = [t for t in targets if (REPO_ROOT / t).exists()]
+    root = cwd if cwd is not None else REPO_ROOT
+    existing = [t for t in targets if (root / t).exists()]
     assert existing, (
-        f"no scan targets exist among {targets} under {REPO_ROOT} -- "
+        f"no scan targets exist among {targets} under {root} -- "
         "this guard must never report a clean scan of an empty set"
     )
     cmd = ["grep", "-rl", "-E", pattern]
     if exclude_dir:
         cmd.append(f"--exclude-dir={exclude_dir}")
     cmd += existing
-    result = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True)
+    result = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
     # grep: 0 = matches found, 1 = no matches (clean), 2 = a real error
     # (bad pattern, unreadable target, ...) -- exit 2 must not read as clean.
     assert result.returncode in (0, 1), (
@@ -182,39 +194,50 @@ def test_no_path_under_ros_src_matches_experiment_name_or_rai():
     )
 
 
-def test_reference_inside_experiment_dir_is_allowed():
+def test_reference_inside_experiment_dir_is_allowed(tmp_path: Path):
     """The boundary contract, positive control: a reference to this
     experiment's own name, written inside its own directory, must not trip
     this guard -- the directory is the boundary, not the mere string.
+
+    Built entirely under pytest's `tmp_path` (WR-01), never in the live
+    repository tree under test: a synthetic `experiments/<EXPERIMENT_NAME>/`
+    sibling structure, scanned via `_grep_rl`'s `cwd` parameter. This also
+    removes the small residual risk a write into the real working tree
+    carried -- a killed/hung test process leaving a stray untracked probe
+    file behind (`docs/VERIFICATION.md` records this suite hanging once on
+    real hardware).
     """
-    probe = EXPERIMENT_DIR / "_tmp_isolation_boundary_probe.txt"
-    probe.write_text(f"see {EXPERIMENT_NAME} for details\n")
-    try:
-        hits = _grep_rl(NAME_RE, ["experiments"], exclude_dir=EXPERIMENT_NAME)
-        assert not hits, (
-            f"a reference inside {EXPERIMENT_DIR} must not be flagged "
-            f"when the scan excludes the experiment's own directory: {hits}"
-        )
-    finally:
-        probe.unlink()
+    exp_subdir = tmp_path / "experiments" / EXPERIMENT_NAME
+    exp_subdir.mkdir(parents=True)
+    (exp_subdir / "_isolation_boundary_probe.txt").write_text(
+        f"see {EXPERIMENT_NAME} for details\n"
+    )
+    hits = _grep_rl(NAME_RE, ["experiments"], exclude_dir=EXPERIMENT_NAME, cwd=tmp_path)
+    assert not hits, (
+        f"a reference inside {exp_subdir} must not be flagged "
+        f"when the scan excludes the experiment's own directory: {hits}"
+    )
 
 
-def test_reference_one_level_outside_experiment_dir_is_rejected():
+def test_reference_one_level_outside_experiment_dir_is_rejected(tmp_path: Path):
     """The boundary contract, negative control: the same reference, written
     one directory level outside (a sibling under experiments/, not inside
     wojtek_rai_v1/ itself), MUST trip the guard.
+
+    Built entirely under pytest's `tmp_path` (WR-01) -- see the positive
+    control above for why.
     """
-    probe = REPO_ROOT / "experiments" / "_tmp_isolation_boundary_probe.txt"
-    probe.write_text(f"see {EXPERIMENT_NAME} for details\n")
-    try:
-        hits = _grep_rl(NAME_RE, ["experiments"], exclude_dir=EXPERIMENT_NAME)
-        assert hits, (
-            "a reference one directory level outside the experiment "
-            "(a sibling under experiments/) must be caught, not silently "
-            "excluded along with the experiment's own directory"
-        )
-    finally:
-        probe.unlink()
+    experiments_dir = tmp_path / "experiments"
+    experiments_dir.mkdir(parents=True)
+    (experiments_dir / "_isolation_boundary_probe.txt").write_text(
+        f"see {EXPERIMENT_NAME} for details\n"
+    )
+    hits = _grep_rl(NAME_RE, ["experiments"], exclude_dir=EXPERIMENT_NAME, cwd=tmp_path)
+    assert hits, (
+        "a reference one directory level outside the experiment "
+        "(a sibling under experiments/) must be caught, not silently "
+        "excluded along with the experiment's own directory"
+    )
 
 
 def test_deploy_sh_rsync_sources_all_resolve_inside_ros():

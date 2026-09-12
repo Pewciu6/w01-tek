@@ -36,7 +36,7 @@
 # value, and the mount is read-only so nothing inside the container can
 # edit the host's tracked copy.
 #
-# Third mount, read-write: the entire repository root, at /ros2_ws/repo_root.
+# Third mount, read-only: the entire repository root, at /ros2_ws/repo_root.
 # [Rule 2/3 deviation, plan 01-04] FOUND-01's guard test
 # (tests/test_isolation_boundary.py) has to scan ros/, training/ and the
 # repository's top-level shell entry points for a reference to this
@@ -44,19 +44,27 @@
 # none of which are otherwise visible inside the container under D-02's two
 # mounts above. This mirrors the .env.example precedent (one additional,
 # narrowly-justified mount so the container's only real execution path,
-# run.sh test, can actually run the guard it exists to run) but needs
-# write access too: the guard's own fail-first boundary demonstration has
-# to create a temporary probe file one directory level outside the
-# experiment (a sibling under experiments/, not inside wojtek_rai_v1/) to
-# prove the scan actually catches a real violation there, and no other
-# mount reaches that path. Marginal risk over the mounts this service
-# already carries is small: the container is already privileged (see
-# `privileged: true` above in the base compose file) with direct host
-# /dev, ~/.ssh (ro) and a read-write ros/src mount; this adds one more
-# read-write view of the same host checkout, used only by this test suite.
+# run.sh test, can actually run the guard it exists to run).
+#
+# [WR-01 fix] This mount is read-only. The guard's fail-first boundary
+# demonstration (a synthetic reference one directory level outside the
+# experiment, proving the scan actually catches a real violation there)
+# used to need write access for that -- it built its probe file under this
+# very mount, one level outside wojtek_rai_v1/. It no longer does: both
+# boundary-probe tests build their synthetic sibling-directory fixture
+# entirely under pytest's own `tmp_path` instead (see
+# `tests/test_isolation_boundary.py`'s `_grep_rl(..., cwd=tmp_path)` calls),
+# so nothing in this test suite ever needs to write into the real
+# repository tree through this mount. Narrowing to `:ro` closes the write
+# surface FOUND-01's own isolation model exists to protect (`ros/`,
+# `training/`) at the container boundary itself, not just after the fact
+# in tests -- and also removes the residual risk of a killed/hung `pytest`
+# process (this suite has been observed to hang and require a `SIGKILL`,
+# per `docs/VERIFICATION.md` Attempt A) leaving a stray untracked file in
+# the real working tree.
 services:
   wojtek_robot:
     volumes:
       - ../../experiments/wojtek_rai_v1:/ros2_ws/experiments/wojtek_rai_v1
       - ../../.env.example:/ros2_ws/.env.example:ro
-      - ../..:/ros2_ws/repo_root
+      - ../..:/ros2_ws/repo_root:ro
