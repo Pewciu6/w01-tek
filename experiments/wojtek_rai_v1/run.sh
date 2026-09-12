@@ -116,17 +116,30 @@ container_py() {
   # CRED_ENV_ARGS (built above, above the subcommand dispatch): forwards
   # only the credential names this process already has set, by name, never
   # by value -- see the comment where it is built.
-  docker exec -i ${CRED_ENV_ARGS[@]+"${CRED_ENV_ARGS[@]}"} wojtek_robot bash -s <<PYEOF
+  #
+  # [CR-01 fix] The heredoc delimiter is quoted (<<'PYEOF'), so the host
+  # shell performs NO parameter expansion on the body -- it is sent to the
+  # container byte-for-byte. Caller arguments are passed as real positional
+  # parameters via `bash -s -- "$@"` instead of being flattened into the
+  # heredoc text as `$*`: that preserves argument boundaries (a `-k "a or
+  # b"` style argument survives as one argument) and never re-parses their
+  # contents as shell source (a metacharacter in an argument, e.g. `$(...)`
+  # or `;`, is inert data to the inner `exec .venv/bin/python "$@"`, not
+  # code). CONTAINER_EXP_DIR is a fixed literal (see its definition above),
+  # so hardcoding it here is simplest -- the now fully-static heredoc no
+  # longer needs host-side interpolation of any variable.
+  docker exec -i ${CRED_ENV_ARGS[@]+"${CRED_ENV_ARGS[@]}"} wojtek_robot \
+    bash -s -- "$@" <<'PYEOF'
 # -u (nounset) deliberately not set: /opt/ros/jazzy/setup.bash references
 # unset variables internally (e.g. AMENT_TRACE_SETUP_FILES) -- matches
 # ros/sim.sh's and ros/dev.sh's own "set -eo pipefail" for the same reason.
 set -eo pipefail
-EXP_DIR="$CONTAINER_EXP_DIR"
-export UV_INSTALL_DIR="\$EXP_DIR/.tools"
-export PATH="\$UV_INSTALL_DIR:\$PATH"
+EXP_DIR="/ros2_ws/experiments/wojtek_rai_v1"
+export UV_INSTALL_DIR="$EXP_DIR/.tools"
+export PATH="$UV_INSTALL_DIR:$PATH"
 source /opt/ros/jazzy/setup.bash
-[ -f "\$EXP_DIR/ros_ws/install/setup.bash" ] && source "\$EXP_DIR/ros_ws/install/setup.bash"
-cd "\$EXP_DIR"
+[ -f "$EXP_DIR/ros_ws/install/setup.bash" ] && source "$EXP_DIR/ros_ws/install/setup.bash"
+cd "$EXP_DIR"
 # [Rule 1 deviation] The venv is --system-site-packages (D-03/Pattern 2), so
 # it also sees the container's apt-installed pytest plugins (e.g.
 # ros-jazzy-launch-testing's launch_testing entry point). Those were built
@@ -138,7 +151,7 @@ cd "\$EXP_DIR"
 # rclpy/cv_bridge availability (that is PYTHONPATH, unrelated to pytest's
 # own plugin discovery).
 export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
-exec .venv/bin/python $*
+exec .venv/bin/python "$@"
 PYEOF
 }
 
