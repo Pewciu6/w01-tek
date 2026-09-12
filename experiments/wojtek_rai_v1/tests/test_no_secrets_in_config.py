@@ -64,8 +64,16 @@ _IGNORED_DIR_NAMES = {"__pycache__", ".pytest_cache", ".git"}
 
 # Common cloud API key / token shapes. Extend as new vendors are added
 # (HRI-03).
+#
+# [WR-03 fix] The OpenAI-style branch originally required 16+ *contiguous*
+# alphanumerics immediately after "sk-", which misses real Anthropic-style
+# keys (`sk-ant-api03-...`): those contain hyphens/underscores a few
+# characters in, so the run of bare alphanumerics after the prefix never
+# reaches 16. Allowing "-"/"_" inside the run (still gated at 16+ chars, so
+# a short benign "sk-" substring can't trip it) catches both shapes with
+# one branch, matching pk- prefixed keys the same way.
 SECRET_SHAPE_RE = re.compile(
-    r"sk-[A-Za-z0-9]{16,}"  # OpenAI-style
+    r"(?:sk|pk)-[A-Za-z0-9_-]{16,}"  # OpenAI/Anthropic-style
     r"|AKIA[0-9A-Z]{16}"  # AWS access key id
     r"|AIza[0-9A-Za-z_-]{35}"  # Google API key
     r"|ey[A-Za-z0-9_-]{10,}\."  # JWT-shaped
@@ -75,8 +83,18 @@ SECRET_SHAPE_RE = re.compile(
 # A hard-coded credential/secret field with a non-empty value -- belt and
 # suspenders alongside SECRET_SHAPE_RE for a key whose value doesn't happen
 # to match one of the shapes above.
+#
+# [WR-03 fix] `\b(api_key|api_token|secret)\b` never matched a field like
+# `client_secret` or `oauth_secret`: `_` is a word character, so `\bsecret\b`
+# does not match right after a preceding underscore -- there is no word
+# boundary there. The optional `(?:[A-Za-z][A-Za-z0-9]*_)?` prefix group
+# lets any `<name>_` precede one of the credential-shaped suffixes below,
+# so `client_secret`, `oauth_secret`, `refresh_token`, and `db_password` are
+# all caught, in addition to the bare/original names and `private_key`.
 POPULATED_KEY_FIELD_RE = re.compile(
-    r"(?i)\b(api_key|api_token|secret)\s*[=:]\s*[\"'][^\"']+[\"']"
+    r"(?i)\b(?:[a-z][a-z0-9]*_)?"
+    r"(?:api_key|api_token|secret|token|password|private_key)"
+    r"\s*[=:]\s*[\"'][^\"']+[\"']"
 )
 
 # The identity of private infrastructure: a dotted-quad IP address, a
