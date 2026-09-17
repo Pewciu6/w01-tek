@@ -200,6 +200,7 @@ Default actor observations are `gyro`, `gravity`, `joint_pos`, `joint_vel`,
 | `task.env.tau_ff.rate_weight` | `1.0` | Weight of the head's half inside `action_rate`, so smoothness pressure on a head whose job is transient force is tunable separately from the position targets'. |
 | `task.env.reward.target_sag_wz_fade` | `0.0` | Fade the `target_sag` charge out with the commanded \|wz\|, reaching zero at this rate (rad/s; 0 = full charge everywhere). A pivot loads the stance joints laterally — commanded twist, not gravity sag — and charging it makes pure spins an exploration-time deadlock (measured 2026-08-09: wz 1.0 → ~0.3 achieved at any scale without the fade; a near-binary `0.1` restored 0.84/−0.89). |
 | `task.env.reward.feet_landing_wz_fade` | `0.0` | The same fade for the `feet_landing` charge. Pivots have the hardest touchdowns, so a landing penalty makes spinning the most expensive skill a fine-tune can shed (measured 2026-08-12: keeper restore at `feet_landing=-15` quieted every linear skill but eroded achieved wz 0.96 → 0.05). `0.1` exempts commanded turning near-binarily; spins stay loud by design. |
+| `task.env.reward.feet_landing_wz_floor` | `0.0` | Bottom of that fade: the charge fraction a commanded spin still pays (`0` = fully exempt, `1` = no exemption). Shared by `feet_touchdown`. |
 | `task.env.symmetry.enable` | `false` | Per-env left-right mirrored worlds: observations mirrored on the way out, actions un-mirrored on the way in, physics and rewards in the real frame. A skill learned turning one way then exists turning the other by construction. Training-only; the deployed policy always sees real observations. |
 | `task.env.symmetry.mirror_prob` | `0.5` | Probability that an env is a mirrored one. Sampled at reset, so under the Brax auto-reset wrapper it stays fixed per env for the run, like the latency and encoder draws. |
 | `task.env.terrain.enable` | `false` | Train on the terrain arena. Needs `build-terrain` first. See [Terrain curriculum](#terrain-curriculum). |
@@ -251,6 +252,10 @@ Default actor observations are `gyro`, `gravity`, `joint_pos`, `joint_vel`,
 | `task.env.reward.tracking_rel_sigma` | `0.25` | Dimensionless width of the relative tracking kernels. Read only when `tracking_relative` is on. |
 | `task.env.reward.apex_target` | `0.05` m | Per-swing peak-clearance target that `feet_apex` pays at touchdown. |
 | `task.env.reward.glide_height` | `0.03` m | Pre-contact clearance band in which `feet_landing` prices downward foot speed; a foot above the band contributes nothing. |
+| `task.env.reward.support_min_contact` | `2` | Feet the `support` term expects on the ground while moving. `2` allows a flight-free diagonal trot, `3` demands a statically stable walk. |
+| `task.env.reward.base_accel_ang_weight` | `0.02` | Relative weight of the base roll/pitch angular acceleration inside `base_accel` (rad/s² spikes run ~5× the m/s² ones). |
+| `task.env.reward.base_accel_wz_fade` | `0.0` | Commanded-\|wz\| fade of the `base_accel` charge, the `feet_landing_wz_fade` construction (0 = full charge everywhere). A pivot generates lateral accelerations by physics; charging them fully sells spin rate. |
+| `task.env.reward.base_accel_wz_floor` | `0.0` | Bottom of that fade: the fraction of the `base_accel` charge a commanded spin still pays. |
 | `task.env.reward.orientation_tol_deg` | `0.0` | Tolerance cone around upright for the `orientation` penalty, half-angle in degrees. The penalty becomes `max(sin^2(tilt) - sin^2(tol), 0)`: zero inside the cone, rising continuously from its edge. `0` is the bit-exact legacy penalty. |
 | `task.env.reward.terrain_gate.enable` | `false` | Scale the gait shaping with the terrain under and just ahead of the robot: `feet_apex` and `high_step` are multiplied by the gate, `feet_landing` is discounted by `landing_soften`. Terrain only; off, every factor is the literal `1.0` and the terms are unchanged. |
 | `task.env.reward.terrain_gate.floor` | `0.15` | Fraction of the lift shaping that pays on flat ground. |
@@ -273,7 +278,8 @@ Joystick reward-scale defaults:
 | `stand_feet_down` | `0.0` | `termination` | `-1.0` |
 | `torque_limit` | `0.0` | `feet_apex` | `0.0` |
 | `feet_landing` | `0.0` | `tau_ff_swing` | `0.0` |
-| `tau_ff` | `0.0` |  |  |
+| `tau_ff` | `0.0` | `base_accel` | `0.0` |
+| `feet_touchdown` | `0.0` | `support` | `0.0` |
 
 The zero-default terms are dormant until a preset or override enables them:
 `torque_rate` penalizes step-to-step change in actuator torque (bang-bang
@@ -289,7 +295,16 @@ head (`task.env.tau_ff`) and read zero while it is disabled: `tau_ff_swing`
 charges the head's |torque| on legs whose foot is not in ground contact
 (force control belongs on stance legs), and `tau_ff` is the quadratic
 effort the `torques` term cannot see (`actuator_force` is the PD servo
-only).
+only). `base_accel` penalizes the base's finite-difference vertical and
+roll/pitch angular acceleration (the shock the body feels at each step),
+`feet_touchdown` charges the squared pre-impact downward foot speed once
+per touchdown (the impact itself, where `feet_landing` prices the approach
+inside `glide_height`; same wz fade/floor and terrain soften), and
+`support` charges, per step while moving, each foot short of
+`support_min_contact` on the ground, so flight phases and three-feet-up
+bounds pay and a gait that swaps stance legs pays nothing. The
+`feet_in_contact_per_step` metric reports the stance count these terms
+shape.
 
 Example custom joystick distribution:
 
@@ -799,6 +814,9 @@ so command-line values can still override it.
 | `flat_quiet_v2` | flat_quiet_v1 | `feet_landing=-15`. Very quiet where it steps (td_p90 0.26 m/s at walk vs the keeper's 0.89) but skates below ~0.4 m/s and deadlocks spins from scratch. Use as the phase-B recipe on a keeper restore instead (run `wojtek_flat_quiet_v2b_s0`). |
 | `flat_quiet_v3` | flat_quiet_v1 | `feet_landing=-25` phase-B probe: over-pressured — skating creeps up the speed range and spins die even from a keeper restore. Dose-response data point, not a keeper. |
 | `flat_quiet_v4` | flat_quiet_v2 | + `feet_landing_wz_fade=0.1`: v2b's keeper-restore recipe with commanded turning exempt (near-binary, the sag-fade construction). The quiet-walking proposal: linear skills step 3-6x quieter, spins keep the loud keeper gait by design. |
+| `flat_quiet_v5` | flat_quiet_v4 | + `energy_cmd=1.0`: the anti-jump-turn arm (v4's spins were jump-turns at 64 W vs 16 W walking). Restore from a converged v4 checkpoint. |
+| `flat_quiet_v6` | flat_quiet_v4 | The full quiet recipe from scratch (2B): `feet_landing=-15` + spin fade + `energy_cmd=1.0` + `feet_landing_wz_floor=0.35` (spins pay 35% of the landing charge). |
+| `flat_grace_v1` | flat_quiet_v6 | No-impact, stance-swapping iteration at the deployed kp40/kd0.8 keeper plant: `glide_height=0.06`, `feet_touchdown=-10`, `support=-2` (`support_min_contact=2`), `base_accel=-0.02` with the wz fade/floor. Restore from the quiet keeper; judge on the courses table, touchdown speeds, `az_p99` and `feet_in_contact_per_step`. |
 | `getup` | getup | Safe fall recovery baseline. |
 | `jump` | jump | Commanded jump baseline. |
 | `jump_v3` | jump | Higher torque and deliberate wind-up jump recipe. |

@@ -1,0 +1,59 @@
+# @package _global_
+# GRACE, iteration 1 (2026-09-17): the quiet recipe pushed from "quiet
+# touchdowns" to "no impacts, stance legs swap". On the robot the deployed
+# kp40 quiet keeper (wojtek_flat_quiet_baseacc_s0, published as
+# wojtek-quiet-locomotion@46b5f29) still strikes the floor. Reading the
+# reward set explains it: feet_landing sees only the last 3 cm at 20 ms
+# granularity (one or two samples of a free-falling foot), feet_apex pays
+# per swing (a cadence incentive), energy_cmd pays for letting a foot fall
+# rather than braking it, and nothing prices how many feet carry the body
+# — so a bounding trot with a flight phase is the cheapest gait.
+# Four changes vs flat_quiet_v6, all rewards (obs layout and action space
+# untouched, so a keeper checkpoint restores):
+# - glide_height 0.03 -> 0.06: the landing charge sees the whole descent.
+# - feet_touchdown -10: the impact itself, once per touchdown, priced on
+#   the pre-impact foot speed. A 1 m/s free-fall strike costs 10 (on par
+#   with feet_apex's +5 per swing); a 0.15 m/s placement costs 0.2.
+# - support -2 with support_min_contact 2: a flight phase costs 4 per
+#   step, three feet up 2 per step; a flight-free diagonal trot in which
+#   the swing foot lands as its partner lifts pays nothing.
+# - base_accel -0.02 with the wz fade/floor: the dose measured on the kp40
+#   keeper (base shocks -37..47% at no courses cost, commit 6ff736c).
+# Plant = the deployed keeper's servo contract (kp 40 / kd 0.8 / 12 Nm,
+# tau_ff +-3) so the run compares to it and drops onto the robot with no
+# launch change. Restore from that keeper (phase-B convention); RND
+# re-learns its predictor after restore, expected and harmless.
+# Risks to watch (recorded lessons): motion suppression / skating at slow
+# commands (a foot that never lifts pays neither term), and spins eroding
+# — support is NOT wz-faded on purpose, the jump-turn is exactly what it
+# is meant to turn into a step-turn; if achieved wz collapses, lower the
+# support scale before touching anything else.
+# Judge: the courses table (nothing may fall vs the keeper), the
+# touchdown-speed table (td_p90 at walk and at slow), the battery's
+# az_p99, and the new feet_in_contact_per_step metric (about 2 on a trot,
+# never below 2 in a moving window).
+# Usage:
+#   ./training/run.sh train +experiment=flat_grace_v1 --cfg job --resolve
+#   ./training/run.sh train +experiment=flat_grace_v1 \
+#     restore=runs/wojtek_flat_quiet_baseacc_s0/checkpoints/<final>
+defaults:
+  - flat_quiet_v6
+
+task:
+  env:
+    pd_kp: 40.0
+    pd_kd: 0.8
+    reward:
+      glide_height: 0.06
+      support_min_contact: 2
+      base_accel_wz_fade: 0.1
+      base_accel_wz_floor: 0.35
+      scales:
+        feet_touchdown: -10.0
+        support: -2.0
+        base_accel: -0.02
+
+ppo:
+  num_timesteps: 1000000000
+
+run_name: wojtek_flat_grace_v1

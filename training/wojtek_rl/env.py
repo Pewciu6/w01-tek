@@ -81,6 +81,37 @@ def tau_ff_swing_cost(tau_ff: jax.Array, contact: jax.Array) -> jax.Array:
     return jp.sum(per_leg * (1.0 - contact.astype(jp.float32)))
 
 
+def touchdown_cost(last_feet_vz, first_contact):
+    """Squared downward foot speed at the step a foot first touches down.
+
+    `last_feet_vz` is each foot's vertical speed from the PREVIOUS control
+    step (pre-impact, before the solver absorbs the strike); `first_contact`
+    marks the feet that touched down this step. Upward speed reads 0.
+    Pure so tests can pin it without an env.
+    """
+    vz = jp.clip(jp.asarray(last_feet_vz), None, 0.0)
+    return jp.sum(jp.square(vz) * jp.asarray(first_contact).astype(vz.dtype))
+
+
+def support_shortfall(contact, min_contact):
+    """How many feet short of `min_contact` are on the ground (>= 0).
+
+    0 whenever at least `min_contact` feet touch; 1 per missing foot
+    otherwise, so a flight phase under min 2 costs 2 per step.
+    """
+    n = jp.sum(jp.asarray(contact).astype(jp.float32))
+    return jp.maximum(jp.asarray(min_contact, jp.float32) - n, 0.0)
+
+
+def wz_charge(cmd_wz, fade, floor):
+    """Commanded-|wz| charge factor with a floor: 1 with no fade, else
+    max(clip(1 - |wz| / fade, 0, 1), floor). The feet_landing construction,
+    factored so a new term can share it exactly."""
+    if not fade:
+        return 1.0
+    return jp.maximum(jp.clip(1.0 - jp.abs(cmd_wz) / fade, 0.0, 1.0), floor)
+
+
 def default_config() -> config_dict.ConfigDict:
     return config_dict.create(
         ctrl_dt=0.02,
@@ -677,6 +708,20 @@ def default_config() -> config_dict.ConfigDict:
                 # off; a policy trained with it glides feet into stance
                 # instead of striking the floor at swing free-fall speed.
                 feet_landing=0.0,
+                # Touchdown-speed penalty (0 = off): the squared downward
+                # foot speed of the PREVIOUS control step, charged once at
+                # first contact. feet_landing prices the approach inside
+                # glide_height; this prices the impact itself, measured
+                # the way the quiet_eval td_p90 metric measures it. Shares
+                # feet_landing's wz fade/floor and terrain soften.
+                feet_touchdown=0.0,
+                # Support-exchange penalty (0 = off): per control step,
+                # how many feet short of reward.support_min_contact are
+                # on the ground while moving. Prices flight phases and
+                # three-feet-up bounds — a gait that swaps stance legs
+                # (a foot lands before its partner lifts) pays nothing.
+                # Gait-agnostic: it never says WHICH feet, only how many.
+                support=0.0,
                 # Four-bar flat-proximity shaping (0 = off): quadratic ramp
                 # from 0 at toggle 90 deg to 1 at 180, summed over legs.
                 # The gradient that teaches the policy to stay off the
@@ -763,6 +808,10 @@ def default_config() -> config_dict.ConfigDict:
             # "spins stay loud" (v4, td_p90 0.87 in a spin) and "spins
             # erode" (v2b, achieved wz 0.96 -> 0.05 at full charge).
             feet_landing_wz_floor=0.0,
+            # Feet the `support` term expects on the ground while moving:
+            # 2 allows a diagonal trot with no flight phase (the Unitree
+            # gait), 3 demands a statically stable walk. Whole feet.
+            support_min_contact=2,
         ),
     )
 
@@ -1391,6 +1440,10 @@ class WojtekJoystick(WojtekEnv):
             "last_torque": jp.zeros(12),
             "last_base_vz": jp.zeros(()),
             "last_gyro_xy": jp.zeros(2),
+            # Per-foot vertical speed of the previous control step, read
+            # by feet_touchdown at first contact (pre-impact, like
+            # feet_landing, but sampled once per touchdown).
+            "last_feet_vz": jp.zeros(4),
             "last_qvel_probe": jp.zeros(12),
             "motor_targets": anchor,
             "step_count": jp.array(0),
@@ -1431,6 +1484,7 @@ class WojtekJoystick(WojtekEnv):
             flat_pitch_down_deg_per_step=jp.zeros(()),
             flat_pitch_on_flat_per_step=jp.zeros(()),
             cmd_spin_per_step=jp.zeros(()),
+            feet_in_contact_per_step=jp.zeros(()),
         )
         if self._config.no_progress.enable:
             # Optimistic seed: a fresh episode starts at progress ratio 1,
@@ -1641,6 +1695,7 @@ class WojtekJoystick(WojtekEnv):
         info["last_torque"] = data.actuator_force
         info["last_base_vz"] = data.qvel[2]
         info["last_gyro_xy"] = self._gyro(data)[:2]
+        info["last_feet_vz"] = data.sensordata[self._foot_linvel_adr][:, 2]
         info["last_qvel_probe"] = data.qvel[self._vadr]
         info["motor_targets"] = motor_targets
         # For the curriculum wrapper: where the base is, and how far the
@@ -1765,6 +1820,9 @@ class WojtekJoystick(WojtekEnv):
             & (cmd_stepped[0] == 0.0)
             & (cmd_stepped[1] == 0.0)
         ).astype(jp.float32)
+        # Stance count, the gait's support signature: 4 standing, ~2 in a
+        # flight-free trot, ~3 in a walk, <2 whenever the robot bounds.
+        metrics["feet_in_contact_per_step"] = jp.sum(contact).astype(jp.float32)
         # The `_per_step` suffix makes brax report the mean, not the sum.
         if self._terrain_enabled:
             metrics["terrain_level_per_step"] = info["terrain_level"].astype(jp.float32)
@@ -2257,6 +2315,25 @@ class WojtekJoystick(WojtekEnv):
                 if self._config.reward.get("feet_landing_wz_fade", 0.0)
                 else 1.0
             ),
+            # Impact itself, once per touchdown (see the scales entry):
+            # the previous step's downward foot speed at first contact.
+            # Same gates as feet_landing so the two terms price one
+            # policy consistently (a spin pays the same fraction of both).
+            "feet_touchdown": touchdown_cost(info["last_feet_vz"], first_contact)
+            * moving
+            * landing_soften
+            * wz_charge(
+                cmd[2],
+                self._config.reward.get("feet_landing_wz_fade", 0.0),
+                self._config.reward.get("feet_landing_wz_floor", 0.0),
+            ),
+            # Feet short of the support minimum while moving (see the
+            # scales entry). Not faded with wz on purpose: a jump-turn is
+            # exactly the spin this term is meant to turn into a step-turn.
+            "support": support_shortfall(
+                contact, self._config.reward.get("support_min_contact", 2)
+            )
+            * moving,
             "feet_phase": jp.exp(-phase_err / self._config.reward.phase_sigma)
             * moving,
             "high_step": high_step * moving * shape_gate * gate,
