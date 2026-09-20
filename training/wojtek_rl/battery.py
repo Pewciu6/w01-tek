@@ -198,8 +198,31 @@ def plant_step(contacts, switch_idx, hold=25):
     return None
 
 
-def battery_scenarios():
-    """name -> (cmd_at(i), n_steps). Split out so report.py (and eval.py's
+# Stance heights the scenarios command on the stock robot: the anchor, and
+# the low and high steps of height_step.
+STOCK_HEIGHTS = (0.125, 0.105, 0.155)
+
+
+def scenario_heights(env):
+    """(anchor, low, high) stance heights for the robot an env simulates.
+
+    The stock robot keeps its fixed numbers, whatever a run's command range
+    is, so its battery stays comparable with every archived one. Another
+    robot variant stands somewhere else entirely, so its heights come from
+    the height range it was trained on: the middle, and a quarter of the
+    way in from each end.
+    """
+    if env._robot.name == paths.DEFAULT_ROBOT:
+        return STOCK_HEIGHTS
+    lo, hi = (float(v) for v in env._config.command.height)
+    span = hi - lo
+    return (round(lo + 0.5 * span, 4), round(lo + 0.25 * span, 4),
+            round(lo + 0.75 * span, 4))
+
+
+def battery_scenarios(heights=STOCK_HEIGHTS):
+    """name -> (cmd_at(i), n_steps). `heights` is scenario_heights(env); the
+    default is the stock robot's. Split out so report.py (and eval.py's
     --scenario) can reuse the exact same battery scenarios. Height is
     pinned at 0.125 in the original four scenarios -- the redesign drops
     the height command, but the env
@@ -207,7 +230,7 @@ def battery_scenarios():
     the anchor value. height_step is the exception: it exercises the
     phase-C height command (a fixed-height policy simply gets its anchor
     shifted under it, which is a fair baseline)."""
-    H = 0.125
+    H, h_low, h_high = heights
 
     def stand_to_trot_ramp(i):
         vx = 0.0 if i < 100 else min(1.0, (i - 100) / 500)
@@ -249,13 +272,13 @@ def battery_scenarios():
         if i < 100:
             vx, h = 0.0, H
         elif i < 250:
-            vx, h = 0.0, 0.105
+            vx, h = 0.0, h_low
         elif i < 400:
-            vx, h = 0.0, 0.155
+            vx, h = 0.0, h_high
         elif i < 600:
-            vx, h = 0.4, 0.105
+            vx, h = 0.4, h_low
         else:
-            vx, h = 0.4, 0.155
+            vx, h = 0.4, h_high
         return jp.array([vx, 0.0, 0.0, h])
 
     return {
@@ -967,7 +990,7 @@ def run_battery(
     }
     if "seam" in run:
         results["seam"] = run["seam"]
-    for name, (cmd_at, n) in battery_scenarios().items():
+    for name, (cmd_at, n) in battery_scenarios(scenario_heights(env)).items():
         rec, fell_at, _term = rollout(env, reset, step, inf, cmd_at, n)
         results[name] = scenario_result(name, rec, fell_at, env.dt, torque_cap)
     return results

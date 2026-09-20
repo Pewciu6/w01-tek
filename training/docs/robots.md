@@ -8,7 +8,7 @@ differ between variants.
 | Variant | Legs | Standing height | Status |
 |---|---|---|---|
 | `wojtek` | The robot as built. | 0.12 m | Default. Every task and every existing preset. |
-| `legs_v627` | The v6.27 four-bar legs, about 2.3 times longer. | 0.345 m | Simulation only. Joystick task on flat ground. No policy has been trained on it yet. |
+| `legs_v627` | The v6.27 four-bar legs, about 2.3 times longer. | 0.345 m | Simulation only. Joystick task on flat ground. One policy trained, see "First trained policy". |
 
 ## Selecting a variant
 
@@ -147,13 +147,41 @@ These measurements ran on CPU MuJoCo. The step rate on a GPU under MJWarp has
 not been measured. `check --robot legs_v627 --gpu --backend warp` measures it
 and scales the result by the timestep before comparing with the Go1 gate.
 
+## First trained policy
+
+`wojtek_legs_v627_loco_v1` is `+experiment=legs_v627_locomotion` from scratch,
+seed 1, 32768 envs, 498M steps on one RTX 5090 under MJWarp, 2026-09-20. It
+trained at about 335k steps/s and took 25 minutes. The stock robot trains at
+a similar rate, so the 2 ms step is affordable.
+
+| Measure | Value |
+|---|---|
+| Final eval reward | 72.0, flat at 67-72 from 130M steps on |
+| Falls in the six battery scenarios | 0 |
+| Achieved speed at a 0.5 m/s command | 0.43 m/s |
+| Achieved speed at a 1.0 m/s command | 0.90 m/s |
+| Velocity error, ramp / turn / arc | 0.09 / 0.15 / 0.36 m/s |
+| Height error | 2-3 mm, 16 mm in walk-to-stop |
+| Torque p50 / p99 / max | 1.9 / 14.4 / 22.0 N*m |
+| Gait on the ramp | diagonal pairs in phase (0.50), sides in antiphase (-0.55), duty 0.62 |
+| Body attitude, p95 | pitch 2.6 deg, roll 1.9 deg |
+
+The arc scenario is the weak one. The gait numbers in the preset were never
+tuned, and nothing in this run pointed at one of them as wrong.
+
+`report`, `battery` and `eval` take their stance heights from the run's robot.
+The stock robot keeps 0.125 m with steps to 0.105 m and 0.155 m. Another
+variant uses the middle of its trained `command.height` range, and a quarter
+of the way in from each end for the height steps.
+
 ## Open questions for `legs_v627`
 
 - `kp=60` and `kd=2` are a starting point. Standing takes about 8 N·m at the
   knee crank, so the legs sag 0.13 rad there. `task.env.pd_kp` and `pd_kd`
   override the gains per run.
 - The gait clock, swing height and trot band in `legs_v627_locomotion` are
-  scaled from the stock values by leg length. None of them has been trained.
+  scaled from the stock values by leg length. The first policy walks with
+  them; none of them has been compared against an alternative.
 
 ## Answers from the mechanical team, 2026-09-20
 

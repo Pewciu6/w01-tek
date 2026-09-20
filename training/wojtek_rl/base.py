@@ -287,7 +287,8 @@ class WojtekEnv(mjx_env.MjxEnv):
     @property
     def xml_path(self) -> str:
         return str(
-            self._terrain.files["scene"] if self._terrain_enabled else paths.SCENE_XML
+            self._terrain.files["scene"] if self._terrain_enabled
+            else paths.robot_files(self._robot.name)["scene"]
         )
 
     @property
