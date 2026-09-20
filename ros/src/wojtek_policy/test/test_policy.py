@@ -229,6 +229,40 @@ def test_height_command_moves_anchor_and_obs(tmp_path):
     assert np.allclose(pol.anchor_ctrl, default, atol=1e-6)
 
 
+# Legs other than the stock ones ship a third-joint column and a sign per
+# leg in their height table (deploy_contract.py, contract field "robot").
+V627_TABLE = {
+    "heights": [0.2, 0.3, 0.4],
+    "dsecond": [0.3, 0.1, -0.1],
+    "dthird": [-0.9, -0.3, 0.3],
+    "leg_sign": [-1.0, -1.0, 1.0, 1.0],
+}
+
+
+def test_height_table_with_its_own_third_column_and_leg_signs():
+    home = np.array([0.0, -2.2, -2.0] * 2 + [0.0, 2.2, 2.0] * 2, np.float32)
+    lo, hi = np.full(12, -4.0, np.float32), np.full(12, 4.0, np.float32)
+    got = height_anchor(home, 0.25, lo, hi, table=V627_TABLE)
+    rear = [0.0, -2.2 - 0.2, -2.0 + 0.6]
+    front = [0.0, 2.2 + 0.2, 2.0 - 0.6]
+    assert np.allclose(got, rear * 2 + front * 2, atol=1e-6)
+
+
+def test_table_without_third_column_keeps_the_stock_rule():
+    table = {k: V627_TABLE[k] for k in ("heights", "dsecond")}
+    home = np.array(HOME, np.float32)
+    lo, hi = np.full(12, -9.0, np.float32), np.full(12, 9.0, np.float32)
+    got = height_anchor(home, 0.25, lo, hi, table=table)
+    assert np.allclose(got, home + np.tile([0.0, 0.2, 0.4], 4), atol=1e-6)
+
+
+def test_policy_without_knee_singularity_refuses_clamp_knee(tmp_path):
+    updates = {"knee_singularity": None, "robot": "legs_v627"}
+    assert make_policy(tmp_path, meta_updates=updates).knee_singularity is None
+    with pytest.raises(ValueError, match="clamp_knee"):
+        make_policy(tmp_path, meta_updates=updates, clamp_knee=True)
+
+
 def test_pinned_height_keeps_resolved_anchor(policy):
     # The default fixture pins height (low == high): the resolved anchor is
     # the contract's word, never recomputed at runtime.

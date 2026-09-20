@@ -90,3 +90,32 @@ def test_sim_plant_is_selected_by_hw(sim):
     assert mujoco[0].find("hardware/plugin").text == (
         "wojtek_mujoco_hardware_interface/MujocoHardwareInterface"
     )
+
+
+def _robot(**args):
+    path = f"{get_package_share_directory('wojtek_pc')}/urdf/wojtek_sim.urdf.xacro"
+    cmd = ["xacro", path, "hw:=mock"] + [f"{k}:={v}" for k, v in args.items()]
+    out = subprocess.run(cmd, check=True, capture_output=True, text=True).stdout
+    return ET.fromstring(out)
+
+
+def test_other_legs_keep_every_name_the_stack_binds_to(sim):
+    """legs:=legs_v627 swaps the mechanics under the same names: the policy
+    and the controllers bind joints by name, TF consumers bind links."""
+    stock, v627 = _robot(), _robot(legs="legs_v627")
+    assert _joints(v627.findall("ros2_control")) == _joints(sim)
+    names = lambda robot, tag: {e.get("name") for e in robot.findall(tag)}  # noqa: E731
+    assert names(stock, "link") <= names(v627, "link")
+    assert names(stock, "joint") <= names(v627, "joint")
+    # and they are other legs: the thigh is more than twice as long
+    knee = lambda robot: float(  # noqa: E731
+        next(j for j in robot.findall("joint")
+             if j.get("name") == "front_left_fifth_joint")
+        .find("origin").get("xyz").split()[0]
+    )
+    assert abs(knee(v627)) > 2 * abs(knee(stock))
+
+
+def test_unknown_legs_are_refused():
+    with pytest.raises(subprocess.CalledProcessError):
+        _robot(legs="no_such_legs")
