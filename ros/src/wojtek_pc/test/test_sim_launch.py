@@ -33,6 +33,7 @@ class _FakePolicy:
     source = "dir:/tmp/test_policy"
     directory = "/tmp/test_policy"
     pd = {"kp": 40.0, "kd": 1.6, "max_torque": 9.0}
+    meta = {}  # no tau_ff block: the plain PD contract
 
 
 @pytest.fixture(autouse=True)
@@ -54,6 +55,10 @@ def _context(hardware, **overrides):
         "bag": "false", "bag_dir": "/tmp/bags", "bag_cpus": "",
         "rviz": "false", "rviz_config": "/tmp/x.rviz",
         "launch-prefix": "",
+        # Opt-in extras _launch_setup performs even when they stay off.
+        "telemetry": "false", "sysinfo_cpus": "",
+        "foxglove": "false", "foxglove_cpus": "",
+        "deck": "false", "deck_port": "8090", "deck_cpus": "",
     }
     if hardware == "real":
         defaults.update({
