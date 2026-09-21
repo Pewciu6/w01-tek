@@ -169,6 +169,42 @@ a similar rate, so the 2 ms step is affordable.
 The arc scenario is the weak one. The gait numbers in the preset were never
 tuned, and nothing in this run pointed at one of them as wrong.
 
+## Level stance and steadier body, 2026-09-21
+
+The first policy carried its body 2.6 to 3.8 degrees nose-up. The stance was
+the cause. With the CAD keyframe's equal targets the model stands 1.1 degrees
+nose-up, because the centre of mass is 18 mm behind the middle and the rear
+legs sag more. The `pose` reward pulls a policy toward that stance.
+`stand_pose` in `robots.py` now levels it, and the battery reports the mean
+and the standard deviation of pitch and roll, so a lean and rocking read as
+two numbers.
+
+Two 367M-step runs from scratch on the level model, seed 1, 32768 envs. Both
+use `tracking_sigma=0.15`, `command.arc_prob=0.2` and
+`command.pure_wz_prob=0.1`. `wojtek_legs_v627_loco_v2b` also has
+`ang_vel_xy=-0.15` and `orientation=-10`. The first policy is scored again on
+the level model for the comparison, which is not the model it trained on.
+
+| Measure | First policy | v2a | v2b |
+|---|---|---|---|
+| Falls in the six scenarios | 0 | 0 | 0 |
+| Ramp: pitch / roll standard deviation, deg | 1.22 / 1.05 | 1.36 / 0.93 | 0.98 / 0.62 |
+| Ramp: tilt rate rms, deg/s | 25.1 | 23.4 | 16.5 |
+| Ramp: velocity error, m/s | 0.067 | 0.068 | 0.055 |
+| Turn: roll p95, deg | 3.4 | 3.0 | 2.0 |
+| Arc: roll p95, deg | 4.4 | 3.8 | 1.8 |
+| Arc: velocity error, m/s | 0.33 | 0.35 | 0.28 |
+| Walk to stop: roll p95, deg | 10.1 | 10.0 | 5.1 |
+| Front stride span, m | 0.196 | 0.200 | 0.208 |
+| Torque p99, N*m | 14.6 | 14.5 | 14.1 |
+
+The attitude terms did the work. The command and tracking changes alone
+(v2a) moved nothing by more than noise. v2b rocks a third less, tracks
+better, and takes a longer stride at the same duty factor, so it did not buy
+its steadiness with a shuffle. Two weak points remain in all three policies.
+Yaw rate in the arc is about 0.2 rad/s short of the 0.6 rad/s command. The
+stop still rolls the body 5 degrees.
+
 `report`, `battery` and `eval` take their stance heights from the run's robot.
 The stock robot keeps 0.125 m with steps to 0.105 m and 0.155 m. Another
 variant uses the middle of its trained `command.height` range, and a quarter
