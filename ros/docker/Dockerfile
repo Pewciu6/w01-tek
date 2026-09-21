@@ -31,6 +31,8 @@ COPY ./src/wojtek_teleop/package.xml ./src/wojtek_teleop/package.xml
 COPY ./src/wojtek_deck/package.xml ./src/wojtek_deck/package.xml
 COPY ./src/magnetometer_broadcaster/package.xml ./src/magnetometer_broadcaster/package.xml
 COPY ./src/wojtek_perception_bringup/package.xml ./src/wojtek_perception_bringup/package.xml
+COPY ./src/wojtek_odometry/package.xml ./src/wojtek_odometry/package.xml
+COPY ./src/wojtek_slam/package.xml ./src/wojtek_slam/package.xml
 COPY ./src/wojtek_mujoco_hardware_interface/package.xml ./src/wojtek_mujoco_hardware_interface/package.xml
 COPY ./src/wojtek_benchmark/package.xml ./src/wojtek_benchmark/package.xml
 
@@ -42,9 +44,10 @@ COPY ./src/wojtek_benchmark/package.xml ./src/wojtek_benchmark/package.xml
 # sim's virtual D435 camera): surfaceless EGL works headless with no GPU,
 # OSMesa is the software fallback. Without them `MUJOCO_GL=egl` raises at
 # import (the sim node then degrades to camera-off).
-# rtabmap-ros is the SLAM behind wojtek_slam (sim.launch.py slam:=true):
-# an exec dependency of a launch-only package, which rosdep below cannot
-# see yet (src/ is copied after this layer), hence listed by hand.
+# rtabmap-ros is the SLAM behind wojtek_slam (sim.launch.py slam:=true).
+# rosdep installs the two nodes the launch runs (rtabmap-slam/-sync) from
+# wojtek_slam's manifest; the metapackage adds the desk tools on top --
+# rtabmap-databaseViewer, rtabmap-report/-export, the RViz plugins.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ros-dev-tools udev git python3-pip setserial openssh-client \
@@ -75,7 +78,8 @@ RUN /bin/bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && \
             imu_i2c_hardware_interface \
             wojtek_telemetry \
             wojtek_teleop wojtek_policy wojtek_bringup wojtek_pc magnetometer_broadcaster \
-            wojtek_perception_bringup wojtek_slam wojtek_mujoco_hardware_interface \
+            wojtek_perception_bringup wojtek_odometry wojtek_slam \
+            wojtek_mujoco_hardware_interface \
             wojtek_benchmark wojtek_deck \
         --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF"
 
