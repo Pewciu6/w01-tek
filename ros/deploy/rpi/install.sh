@@ -310,7 +310,15 @@ provision_service() {
     run "sudo mkdir -p /etc/systemd/system/wojtek-robot.service.d"
     run "sudo install -m644 '${HERE}/wojtek-robot-local.conf' /etc/systemd/system/wojtek-robot.service.d/10-local.conf"
     run "sudo rm -f /etc/systemd/system/wojtek-robot.service.d/10-policy.conf"
+    # The drive-link watchdog: restarts wojtek-robot after a CM crash, a
+    # motor power cycle or a CANdle reset, once the drives answer again --
+    # see wojtek-cm-watchdog.sh. Always on: without it a stack that lost
+    # its drives stays up, deaf, until someone notices.
+    run "sudo install -m755 '${HERE}/wojtek-cm-watchdog.sh' /usr/local/sbin/wojtek-cm-watchdog.sh"
+    run "sudo install -m644 '${HERE}/wojtek-cm-watchdog.service' /etc/systemd/system/wojtek-cm-watchdog.service"
     run "sudo systemctl daemon-reload"
+    run "sudo systemctl enable wojtek-cm-watchdog.service"
+    run "sudo systemctl restart wojtek-cm-watchdog.service || true"
     # The unit is always installed/refreshed; --enable-robot decides whether it
     # runs at power-on, and this phase enforces that state either way. Running
     # a provision without the flag is therefore how you turn boot autostart

@@ -40,6 +40,12 @@ install(
 
 install(DIRECTORY include/ DESTINATION include)
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_link_monitor test/test_link_monitor.cpp)
+  target_include_directories(test_link_monitor PRIVATE include)
+endif()
+
 ament_export_include_directories(include)
 ament_export_libraries(md80_hardware_interface)
 ament_export_dependencies(hardware_interface pluginlib rclcpp rclcpp_lifecycle

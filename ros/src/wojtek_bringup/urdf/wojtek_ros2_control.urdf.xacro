@@ -54,7 +54,7 @@
        usb_port. can_baud (Mbps) must match the drives' flashed baudrate:
        8 since the 2026-07-17 migration for the HAT; the dongle setup ran 1.
        See ros/hw_tests/README.md for the per-drive baud migration tool. -->
-  <xacro:macro name="wojtek_ros2_control" params="kp kd max_torque usb_port bus:=spi can_baud:=8 dry_run:=false tau_ff:=false">
+  <xacro:macro name="wojtek_ros2_control" params="kp kd max_torque usb_port bus:=spi can_baud:=8 dry_run:=false tau_ff:=false link_timeout_cycles:=20">
     <ros2_control name="MD80HardwareInterface" type="system">
       <hardware>
         <plugin>md80_hardware_interface/MD80HardwareInterface</plugin>
@@ -64,6 +64,12 @@
         <!-- true = bench mode: drives never enabled (no torque), encoder
              states still stream. Wired from the launches' dry_run arg. -->
         <param name="dry_run">${dry_run}</param>
+        <!-- Drive link watchdog: read() fails once any drive has delivered
+             no frame for more than this many controller cycles (20 = 100 ms
+             at the 200 Hz update_rate), and the controller manager drops
+             the component into on_error instead of streaming frozen states
+             as if the robot were alive. 0 = off. -->
+        <param name="link_timeout_cycles">${link_timeout_cycles}</param>
       </hardware>
 
       <xacro:wojtek_joint name="front_left_first_joint" can_id="10" kp="${kp}" kd="${kd}" max_torque="${max_torque}" tau_ff="${tau_ff}" />

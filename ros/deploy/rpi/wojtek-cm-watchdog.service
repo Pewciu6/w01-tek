@@ -1,0 +1,13 @@
+[Unit]
+Description=Wojtek: restart wojtek-robot when the drive link dies (CM crash, motor power cycle, CANdle reset)
+After=wojtek-robot.service
+
+[Service]
+ExecStart=/usr/local/sbin/wojtek-cm-watchdog.sh
+Restart=always
+RestartSec=5
+# Keep the probes (python ros2 CLI, mdtool) off the control cores 2,3.
+CPUAffinity=0 1
+
+[Install]
+WantedBy=multi-user.target

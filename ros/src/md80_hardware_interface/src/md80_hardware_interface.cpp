@@ -18,7 +18,9 @@
 
 #include <chrono>
 #include <cmath>
+#include <exception>
 #include <limits>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -52,6 +54,23 @@ hardware_interface::CallbackReturn MD80HardwareInterface::on_init(
     const auto & v = params.at("dry_run");
     dry_run_ = (v == "true" || v == "True" || v == "1");
   }
+  if (params.count("link_timeout_cycles")) {
+    try {
+      link_timeout_cycles_ = static_cast<uint32_t>(std::stoul(params.at("link_timeout_cycles")));
+    } catch (const std::exception & e) {
+      RCLCPP_ERROR_STREAM(
+        rclcpp::get_logger(get_name()),
+        "link_timeout_cycles must be a non-negative integer, got '"
+          << params.at("link_timeout_cycles") << "'");
+      return CallbackReturn::ERROR;
+    }
+  }
+  if (link_timeout_cycles_ == 0) {
+    RCLCPP_WARN(
+      rclcpp::get_logger(get_name()),
+      "link_timeout_cycles=0: drive link watchdog OFF -- a dead SPI/CAN link "
+      "will freeze the states silently");
+  }
 
   return CallbackReturn::SUCCESS;
 }
@@ -69,6 +88,9 @@ hardware_interface::CallbackReturn MD80HardwareInterface::on_configure(
   }
 
   set_modes();
+  // The Md80 list is final now and the update thread is not running yet, so
+  // hooking the RX callbacks here is race-free.
+  register_link_monitors();
 
   return CallbackReturn::SUCCESS;
 }
@@ -169,6 +191,7 @@ hardware_interface::CallbackReturn MD80HardwareInterface::on_activate(
 
   write(rclcpp::Time{}, rclcpp::Duration(0, 0));
   enable_motors();
+  arm_link_monitors();
 
   return CallbackReturn::SUCCESS;
 }
@@ -176,13 +199,52 @@ hardware_interface::CallbackReturn MD80HardwareInterface::on_activate(
 hardware_interface::CallbackReturn MD80HardwareInterface::on_deactivate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
+  link_armed_ = false;
   disable_motors();
+  return CallbackReturn::SUCCESS;
+}
+
+hardware_interface::CallbackReturn MD80HardwareInterface::on_error(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  RCLCPP_ERROR_STREAM(
+    rclcpp::get_logger(get_name()),
+    "Entering error state from '" << previous_state.label()
+                                  << "': stopping the CANdle update loop");
+  link_armed_ = false;
+  // Candle::end() stops the update thread, then disables every drive with a
+  // blocking bus write each -- on a dead link those time out one by one.
+  // That is the point: leave nothing enabled if the bus is merely flaky.
+  for (auto & candle : candle_instances) {
+    try {
+      candle->end();
+    } catch (...) {
+      RCLCPP_WARN(rclcpp::get_logger(get_name()), "Candle::end() threw -- ignoring");
+    }
+  }
+  // SUCCESS -> UNCONFIGURED: the component can be brought up again from
+  // scratch (on_configure re-opens the CANdle and re-checks every drive).
   return CallbackReturn::SUCCESS;
 }
 
 hardware_interface::return_type MD80HardwareInterface::read(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
+  if (link_armed_) {
+    const auto stale = stale_drives();
+    if (!stale.empty()) {
+      std::string ids;
+      for (auto id : stale) ids += (ids.empty() ? "" : ", ") + std::to_string(id);
+      RCLCPP_ERROR_STREAM(
+        rclcpp::get_logger(get_name()),
+        "Drive link lost: no frame from CAN id(s) [" << ids << "] for more than "
+          << link_timeout_cycles_ << " cycles (SPI link to the CANdle dead, "
+          << "CAN bus open, or drives unpowered) -- failing read()");
+      link_armed_ = false;  // one report; the controller manager takes it from here
+      return hardware_interface::return_type::ERROR;
+    }
+  }
+
   std::size_t i = 0;
   for (auto candle : candle_instances) {
     for (auto & md : candle->md80s) {
@@ -450,6 +512,34 @@ void MD80HardwareInterface::disable_motors()
     auto candle = find_candle_by_motor_can_id(md80.can_id);
     candle->controlMd80Enable(md80.can_id, false);
   }
+}
+
+void MD80HardwareInterface::register_link_monitors()
+{
+  link_monitors_.clear();
+  for (auto & candle : candle_instances) {
+    for (auto & md : candle->md80s) {
+      // One heap object per drive: the callback is bound to its address, so
+      // it must not move for the lifetime of the Md80 that calls it.
+      link_monitors_.push_back(std::make_unique<LinkMonitor>());
+      md.registerRXCallback(link_monitors_.back().get(), &LinkMonitor::on_rx);
+    }
+  }
+}
+
+void MD80HardwareInterface::arm_link_monitors()
+{
+  for (auto & m : link_monitors_) m->arm();
+  link_armed_ = link_timeout_cycles_ > 0 && !link_monitors_.empty();
+}
+
+std::vector<int> MD80HardwareInterface::stale_drives()
+{
+  std::vector<int> stale;
+  for (std::size_t i = 0; i < link_monitors_.size() && i < md80_info_.size(); ++i) {
+    if (link_monitors_[i]->tick(link_timeout_cycles_)) stale.push_back(md80_info_[i].can_id);
+  }
+  return stale;
 }
 
 void MD80HardwareInterface::reset_command()
