@@ -508,6 +508,19 @@ def scenario_result(name, rec, fell_at, dt, torque_cap):
     r["pitch_up_p95_deg"] = round(float(np.percentile(np.clip(-pitch, 0, None), 95)), 2)
     r["roll_p95_deg"] = round(float(np.percentile(roll_deg(rec["gravity"]), 95)), 2)
     r["pitch_events_15deg"] = excursion_count(pitch, 15.0)
+    # A p95 cannot tell a body that leans from one that rocks. The mean is
+    # the lean, the standard deviation around it is the rocking, and the
+    # rate is how fast the body rocks (deg/s, both axes together).
+    roll_signed = np.degrees(
+        np.arcsin(np.clip(np.asarray(rec["gravity"], dtype=float)[:, 1], -1.0, 1.0))
+    )
+    r["pitch_down_mean_deg"] = round(float(np.mean(pitch)), 2)
+    r["pitch_std_deg"] = round(float(np.std(pitch)), 2)
+    r["roll_mean_deg"] = round(float(np.mean(roll_signed)), 2)
+    r["roll_std_deg"] = round(float(np.std(roll_signed)), 2)
+    if len(pitch) > 1:
+        rate = np.hypot(np.diff(pitch), np.diff(roll_signed)) / dt
+        r["tilt_rate_rms_deg_s"] = round(float(np.sqrt(np.mean(rate**2))), 1)
     xy = rec["foot_xy_body"]
     c = rec["contact"]
     for label, feet in [("front", FRONT_FEET), ("rear", REAR_FEET)]:

@@ -64,12 +64,24 @@ def test_stock_third_joint_moves_exactly_twice_the_second():
 
 
 def test_leg_sign_matches_the_stand_pose():
-    # A leg mounted the other way round has its joint values negated.
+    # A leg mounted the other way round has its joint values negated. Front
+    # and rear may differ by the few hundredths of a radian that level the
+    # body (see stand_pose in robots.py), never by more.
     for rb in robots.ROBOTS.values():
         front = rb.stand_pose[paths.LEGS.index("front_left")]
         for pose, sign in zip(rb.stand_pose, rb.leg_sign):
             ref = rb.leg_sign[paths.LEGS.index("front_left")]
-            assert np.allclose(np.array(pose) * sign, np.array(front) * ref)
+            assert np.allclose(
+                np.array(pose) * sign, np.array(front) * ref, atol=0.06
+            )
+
+
+def test_left_and_right_legs_stand_alike():
+    # symmetry.enable mirrors left and right, so their targets must match.
+    for rb in robots.ROBOTS.values():
+        pose = dict(zip(paths.LEGS, rb.stand_pose))
+        assert pose["front_left"] == pose["front_right"]
+        assert pose["rear_left"] == pose["rear_right"]
 
 
 def test_default_config_selects_the_stock_robot():

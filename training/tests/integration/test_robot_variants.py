@@ -117,6 +117,10 @@ def test_stands_and_keeps_its_loops_closed(robot):
         mujoco.mj_step(m, d)
         if abs(d.time - 2.0) < m.opt.timestep / 2:
             assert abs(d.qpos[2] - z_home) < 0.01, "home keyframe is not at rest"
+            # The pose reward pulls a policy toward this stance, so a stance
+            # that leans teaches every gait to lean.
+            down = d.xmat[m.body("root").id].reshape(3, 3).T @ [0.0, 0.0, -1.0]
+            assert abs(np.degrees(np.arcsin(down[0]))) < 0.3, "stands pitched"
         worst = max(worst, np.linalg.norm(d.site_xpos[a] - d.site_xpos[b], axis=1).max())
     assert d.qpos[2] > 0.8 * z_home, "fell under random targets"
     assert worst < 2e-3, f"four-bar loop opened by {worst * 1e3:.1f} mm"
@@ -148,11 +152,14 @@ def test_height_command_moves_the_base_straight_up(robot):
     heights = np.asarray(env._anchor_heights)
     assert np.all(np.diff(heights) > 0)
     assert len(heights) == len(robots.get(robot).height_table)
-    # rear legs mirror the front ones, whatever their mounting sign
+    # Every leg extends by the same amount, whatever its mounting sign. The
+    # comparison is on the move away from the stand pose, because front and
+    # rear stand poses may differ by the offset that levels the body.
     ctrl = np.asarray(env._height_ctrl(float(heights[1])))
     sign = np.repeat(robots.get(robot).leg_sign, 3)
-    per_leg = (ctrl * sign).reshape(4, 3)
-    assert np.allclose(per_leg, per_leg[0], atol=1e-6)
+    home = np.asarray(robots.get(robot).stand_pose, dtype=float).ravel()
+    per_leg = ((ctrl - home) * sign).reshape(4, 3)
+    assert np.allclose(per_leg, per_leg[0], atol=1e-5)  # float32 targets
 
 
 @pytest.mark.parametrize("robot", VARIANTS)

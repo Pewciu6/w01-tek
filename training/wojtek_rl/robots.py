@@ -164,9 +164,15 @@ WOJTEK = Robot(
 #     task.env.pd_kp / pd_kd override them per run without a rebuild.
 #   leg_collision: from the visual mesh AABBs. The shin capsule is thinner
 #     than the pad and stops 15 % short of it, so the pad always lands first.
-#   stand_pose: the export's `stanie` keyframe. Front and rear legs are
-#     mounted mirrored (knees point at each other), so their joint values
-#     have opposite signs; see leg_sign.
+#   stand_pose: the export's `stanie` keyframe (second 2.25954745, third
+#     2.00631532), with the rear legs a tenth of a height rung longer and
+#     the front legs a tenth shorter, about 3 mm each. The centre of mass is
+#     18 mm behind the middle, so with the keyframe's equal targets the rear
+#     legs sag more and the body stands 1.1 degrees nose-up. The first
+#     policy carried that lean into every gait. With the offset the body
+#     settles level at 0.345 m. Front and rear legs are mounted mirrored
+#     (knees point at each other), so their joint values have opposite
+#     signs; see leg_sign.
 #   rest_pose_from_source_key: at all joints zero the CAD model has each
 #     shin folded back along its thigh, outside every joint range, and a
 #     simulation started there closes the loops on the wrong side.
@@ -211,10 +217,10 @@ LEGS_V627 = Robot(
         ),
     },
     stand_pose=(
-        (0.0, -2.25954745, -2.00631532),
-        (0.0, -2.25954745, -2.00631532),
-        (0.0, 2.25954745, 2.00631532),
-        (0.0, 2.25954745, 2.00631532),
+        (0.0, -2.2515898, -2.03678985),
+        (0.0, -2.2515898, -2.03678985),
+        (0.0, 2.26669567, 1.98215855),
+        (0.0, 2.26669567, 1.98215855),
     ),
     settle_drop_height=0.40,
     rest_pose_from_source_key=True,

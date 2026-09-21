@@ -249,17 +249,17 @@
 
   <actuator>
     <general name="rear_left_first_joint" joint="rear_left_first_joint" ctrlrange="-3.1416 3.1416" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="0 -60 -2"/>
-    <general name="rear_left_second_joint" joint="rear_left_second_joint" ctrlrange="-0.435241 0.723658" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="-135.573 -60 -2"/>
-    <general name="rear_left_third_joint" joint="rear_left_third_joint" ctrlrange="-0.826354 1.76197" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="-120.379 -60 -2"/>
+    <general name="rear_left_second_joint" joint="rear_left_second_joint" ctrlrange="-0.443199 0.7157" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="-135.095 -60 -2"/>
+    <general name="rear_left_third_joint" joint="rear_left_third_joint" ctrlrange="-0.79588 1.79244" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="-122.207 -60 -2"/>
     <general name="rear_right_first_joint" joint="rear_right_first_joint" ctrlrange="-3.1416 3.1416" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="0 -60 -2"/>
-    <general name="rear_right_second_joint" joint="rear_right_second_joint" ctrlrange="-0.435241 0.723658" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="-135.573 -60 -2"/>
-    <general name="rear_right_third_joint" joint="rear_right_third_joint" ctrlrange="-0.826354 1.76197" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="-120.379 -60 -2"/>
+    <general name="rear_right_second_joint" joint="rear_right_second_joint" ctrlrange="-0.443199 0.7157" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="-135.095 -60 -2"/>
+    <general name="rear_right_third_joint" joint="rear_right_third_joint" ctrlrange="-0.79588 1.79244" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="-122.207 -60 -2"/>
     <general name="front_right_first_joint" joint="front_right_first_joint" ctrlrange="-3.1416 3.1416" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="0 -60 -2"/>
-    <general name="front_right_second_joint" joint="front_right_second_joint" ctrlrange="-0.723658 0.435241" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="135.573 -60 -2"/>
-    <general name="front_right_third_joint" joint="front_right_third_joint" ctrlrange="-1.76197 0.826354" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="120.379 -60 -2"/>
+    <general name="front_right_second_joint" joint="front_right_second_joint" ctrlrange="-0.730806 0.428093" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="136.002 -60 -2"/>
+    <general name="front_right_third_joint" joint="front_right_third_joint" ctrlrange="-1.73781 0.850511" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="118.93 -60 -2"/>
     <general name="front_left_first_joint" joint="front_left_first_joint" ctrlrange="-3.1416 3.1416" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="0 -60 -2"/>
-    <general name="front_left_second_joint" joint="front_left_second_joint" ctrlrange="-0.723658 0.435241" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="135.573 -60 -2"/>
-    <general name="front_left_third_joint" joint="front_left_third_joint" ctrlrange="-1.76197 0.826354" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="120.379 -60 -2"/>
+    <general name="front_left_second_joint" joint="front_left_second_joint" ctrlrange="-0.730806 0.428093" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="136.002 -60 -2"/>
+    <general name="front_left_third_joint" joint="front_left_third_joint" ctrlrange="-1.73781 0.850511" forcerange="-22 22" biastype="affine" gainprm="60" biasprm="118.93 -60 -2"/>
   </actuator>
 
   <sensor>
@@ -345,6 +345,6 @@
   </sensor>
 
   <keyframe>
-    <key name="home" qpos="0 0 0.344317 1 0 0 0 -0.0200841 -2.22604 -1.89326 -2.13576 -1.96258 4.32651e-07 0.0200841 -2.22604 -1.89326 2.13576 1.96258 -4.32651e-07 -0.00843065 2.22167 1.9362 2.17529 1.9936 -1.26183e-07 0.00843065 2.22167 1.9362 -2.17529 -1.9936 1.26183e-07"/>
+    <key name="home" qpos="0 0 0.345934 1 0 0 0 -0.0186536 -2.2224 -1.9316 -2.17111 -1.98844 2.53475e-07 0.0186536 -2.2224 -1.9316 2.17111 1.98844 -2.53475e-07 -0.0100269 2.23666 1.90961 2.15082 1.97585 -9.78131e-08 0.0100269 2.23666 1.90961 -2.15082 -1.97585 9.78131e-08"/>
   </keyframe>
 </mujoco>
