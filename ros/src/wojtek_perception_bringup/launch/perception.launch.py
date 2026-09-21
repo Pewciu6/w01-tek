@@ -15,15 +15,11 @@ The only singleton in here is the camera->body static transform, which is
 why it is opt-out (`extrinsics:=false`) for the case where the robot bringup
 already owns that TF edge.
 
-(The depth->grid reduction that used to live here fed only the SCAN-planner
-and cost ~0.8 of a Pi 4 core; it was removed 2026-08 when that path was
-dropped.)
-
-cloud_accumulate_node -- the odom-frame accumulated cloud -- runs here too
-(`accumulate:=false` drops it): the robot is meant to be autonomous, so the
-map lives on the robot, fed by the raw depth topic and /wojtek/odom from
-leg_odometry. It is stride-limited (every 3rd frame, every 2nd pixel) and
-shares the camera's CPU pin.
+This launch owns the SENSOR only. What is built on the streams -- the map,
+the SLAM -- is wojtek_slam's, included next to this one by the robot bringup.
+(Two earlier in-package consumers are gone: the depth->grid reduction for the
+SCAN-planner, 2026-08, and the odom-frame accumulated cloud, 2026-09, both
+superseded by the SLAM's own map.)
 
 NOTE ON COMPOSITION: the driver runs as a plain node, deliberately. Loading
 it into a component container would buy intra-process zero-copy only if it
@@ -34,8 +30,7 @@ decimation halves each dimension before publishing, so that is 424x240x16
 bit at 15 Hz, ~3 MB/s, which is affordable.
 
 (The colour stream is the heavier one -- 848x480 rgb8 at 6 fps is ~7 MB/s
-uncompressed -- but nothing on the robot subscribes to it yet, and DDS does
-not serialise a topic with no subscribers.)
+uncompressed; the SLAM is its consumer when it runs.)
 
 Both config files are ordinary ROS parameter files, loaded by the nodes
 themselves. Launch arguments override single values on top of the file: each
@@ -89,30 +84,6 @@ def _setup(context, *args, **kwargs):
         )
     ]
 
-    if arg("accumulate").lower() in ("true", "1"):
-        actions.append(
-            Node(
-                package=PKG,
-                executable="cloud_accumulate_node",
-                name="cloud_accumulate",
-                # Pi 4 budget: the node's defaults saturated the machine
-                # (deserializing every 15 fps depth frame plus deprojection
-                # cost ~0.7 of a core). The robot bringup feeds 6 fps depth;
-                # stride 3 keeps ~2 processed frames/s at a coarser pixel
-                # grid -- plenty for a walking-speed map (the 2 cm voxel
-                # thins it anyway).
-                parameters=[{"frame_stride": 3, "pixel_stride": 3}],
-                remappings=[
-                    ("depth/image",
-                     f"/{camera_ns}/{camera_name}/depth/image_rect_raw"),
-                    ("depth/camera_info",
-                     f"/{camera_ns}/{camera_name}/depth/camera_info"),
-                ],
-                prefix=prefix,
-                output="screen",
-            )
-        )
-
     if arg("extrinsics").lower() in ("true", "1"):
         # Not a parameter file: static_transform_publisher takes the pose on
         # the command line, and roll/pitch/yaw is the form a mount is
@@ -156,12 +127,6 @@ def generate_launch_description():
                 "extrinsics", default_value="true",
                 description="Publish the camera->body static transform. Off "
                             "when the robot bringup already owns that edge.",
-            ),
-            DeclareLaunchArgument(
-                "accumulate", default_value="true",
-                description="Run the odom-frame accumulated cloud "
-                            "(cloud_accumulate_node). Needs /wojtek/odom "
-                            "(leg_odometry) and the camera TF chain.",
             ),
             DeclareLaunchArgument(
                 "depth_profile", default_value="",

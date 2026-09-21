@@ -39,7 +39,6 @@ def _context(**overrides):
         "camera_params_file": str(CONFIG / "d435.yaml"),
         "extrinsics_file": str(CONFIG / "extrinsics.yaml"),
         "extrinsics": "true",
-        "accumulate": "true",
         "depth_profile": "",
         "color_profile": "",
         "enable_color": "true",
@@ -65,10 +64,9 @@ def _params(node, ctx):
     return evaluate_parameters(ctx, node._Node__parameters)
 
 
-def test_default_setup_is_driver_accumulate_extrinsics(launch_mod):
+def test_default_setup_is_driver_and_extrinsics(launch_mod):
     actions = launch_mod._setup(_context())
-    assert [type(a) for a in actions] == [Node, Node, Node]
-    assert len(actions) == 3
+    assert [type(a) for a in actions] == [Node, Node]
 
 
 def test_driver_is_a_plain_node_not_a_composable_one(launch_mod):
@@ -82,22 +80,9 @@ def test_driver_is_a_plain_node_not_a_composable_one(launch_mod):
 
 
 def test_optional_pieces_can_be_turned_off(launch_mod):
-    actions = launch_mod._setup(
-        _context(accumulate="false", extrinsics="false"))
+    actions = launch_mod._setup(_context(extrinsics="false"))
     assert len(actions) == 1
     assert actions[0]._Node__package == "realsense2_camera"
-
-
-def test_accumulate_gets_the_depth_topics(launch_mod):
-    ctx = _context()
-    acc = launch_mod._setup(ctx)[1]
-    assert "cloud_accumulate" in str(acc._Node__node_executable)
-    remaps = {
-        perform_substitutions(ctx, src): perform_substitutions(ctx, dst)
-        for src, dst in acc._Node__remappings
-    }
-    assert remaps["depth/image"] == "/camera/camera/depth/image_rect_raw"
-    assert remaps["depth/camera_info"] == "/camera/camera/depth/camera_info"
 
 
 def test_driver_loads_the_camera_parameter_file(launch_mod):
@@ -173,9 +158,8 @@ def test_cpus_argument_pins_the_camera_driver(launch_mod):
     re-affinitized off those cores or it competes with the 400 Hz control
     loop; measured on the Pi 4 it wants ~0.7 of a core with colour+RGBD on."""
     ctx = _context(cpus="0,1")
-    driver, acc, _tf = launch_mod._setup(ctx)
-    for node in (driver, acc):
-        assert perform_substitutions(ctx, _prefix(node)) == "taskset -c 0,1"
+    driver, _tf = launch_mod._setup(ctx)
+    assert perform_substitutions(ctx, _prefix(driver)) == "taskset -c 0,1"
 
 
 def test_no_cpus_argument_inherits_the_affinity(launch_mod):
@@ -198,15 +182,3 @@ def test_rgbd_has_its_two_prerequisites():
         # resolution and rate -- they cannot be chosen independently.
         assert params["rgb_camera"]["color_profile"].rsplit("x", 1)[1] == \
             params["depth_module"]["depth_profile"].rsplit("x", 1)[1]
-
-
-def test_accumulate_does_not_feed_off_the_drivers_cloud():
-    """The driver's XYZRGB cloud is on for viewing, but the accumulator must
-    keep reading the depth IMAGE: consuming a 100k-point cloud that was
-    serialised first is the expensive way round, and that is the whole reason
-    cloud_accumulate subscribes to an Image."""
-    from wojtek_perception_bringup.cloud_accumulate_node import CloudAccumulateNode
-    import inspect
-    src = inspect.getsource(CloudAccumulateNode)
-    assert "PointCloud2, \"depth" not in src
-    assert 'Image, "depth/image"' in src

@@ -1,8 +1,8 @@
 # wojtek_perception_bringup
 
 Prototype. Brings up the RealSense D435 depth stream and its
-post-processing settings (plus colour/RGBD for the VLM). Also home of
-`cloud_accumulate_node`, the PC-side odom-frame accumulated cloud.
+post-processing settings (plus colour/RGBD for the VLM). The sensor only:
+what is built on the streams -- the map -- is `wojtek_slam`.
 
 ```bash
 ros2 launch wojtek_perception_bringup perception.launch.py
@@ -10,17 +10,21 @@ ros2 launch wojtek_perception_bringup perception.launch.py --show-args
 ```
 
 ```
-realsense2_camera ──depth 424x240@15──► (cloud_accumulate on the PC / viz)
+realsense2_camera ──depth 424x240@15──► (viz; the driver's own cloud)
    (plain node)   │     ~3 MB/s          /camera/camera/depth/image_rect_raw
-                  ├──── colour 1280x720@15 ───────────────────────────────► (VLM)
+                  ├──── colour 1280x720@15 ──────────────────────► (VLM, SLAM)
                   │     ~41 MB/s          /camera/camera/color/image_raw
-                  └──── RGBD 1280x720@15 ─────────────────────────────────► (VLM)
+                  ├──── aligned depth 1280x720@15 ───────────────► (SLAM)
+                  │                       /camera/camera/aligned_depth_to_color/image_raw
+                  └──── RGBD 1280x720@15 ────────────────────────► (VLM)
                         ~69 MB/s          /camera/camera/rgbd
 ```
 
-(The depth->8x8 grid reduction that used to sit in this diagram fed only the
-SCAN-planner and cost ~0.8 of a Pi 4 core; removed 2026-08 when that path
-was dropped. Its bench results stay recorded below.)
+(Two in-package consumers used to sit in this diagram and are gone: the
+depth->8x8 grid reduction for the SCAN-planner -- ~0.8 of a Pi 4 core,
+removed 2026-08 with that path -- and `cloud_accumulate_node`, the
+odom-frame accumulated cloud, removed 2026-09 once the SLAM's own map
+superseded it. The grid's bench results stay recorded below.)
 
 848x480 comes off the depth sensor; `decimation_filter.filter_magnitude: 2`
 halves each dimension before anything is published, so what crosses DDS is
@@ -37,18 +41,21 @@ cannot keep up. At 1280x720 expect proportionally worse. That is an accepted
 trade for now; the fix, when one is needed, is a C++ consumer in the driver's
 own process (see the composition note in the launch file), not more bandwidth.
 
-**Depth consumers keep using the RAW depth topic, not the aligned one.**
+**Geometry consumers use the RAW depth topic, not the aligned one.**
 Alignment reprojects depth into the colour intrinsics, and measured on this
 unit that narrows the horizontal field of view from 90.8 deg to 70.0 deg
 (fx 418.0 -> 605.6) -- a quarter of the view, lost at the sides where
-obstacles are.
+obstacles are. The one consumer that needs the aligned product is the SLAM:
+it registers depth to colour by definition, because its features are
+colour-image features. That is a cost it pays for loop closure, not a
+recommendation for anything else.
 
 ## Why this is a `*_bringup`
 
-It composes the third-party `realsense2_camera` driver with this
-package's measured `config/`, and carries the accumulator node the PC viz
-launches. A single-node subsystem does not need one -- `wojtek_teleop`
-carries its own `gamepad.launch.py` and that is the right shape for it.
+It composes the third-party `realsense2_camera` driver and `tf2_ros`
+with this package's measured `config/`. A single-node subsystem does not
+need one -- `wojtek_teleop` carries its own `gamepad.launch.py` and that
+is the right shape for it.
 
 The launch runs standalone and is includable. The one singleton in it is the
 camera->body static transform, so that is opt-out (`extrinsics:=false`) for
@@ -67,7 +74,8 @@ and the last one wins.
 |---|---|
 | camera settings | measured on hardware, see `config/d435.yaml` |
 | camera -> body extrinsics | **placeholder numbers**, must be measured |
-| odom-frame accumulated cloud | `cloud_accumulate_node`, run by the PC viz |
+| map built on the streams | `wojtek_slam` (RTAB-Map), not this package |
+| odom-frame accumulated cloud | REMOVED 2026-09 (superseded by the SLAM's map) |
 | depth -> 8x8 grid reduction | REMOVED 2026-08 (fed only the dropped SCAN-planner path) |
 
 ## What has actually been verified
@@ -94,12 +102,12 @@ radial error exceeds a 0.05 m map cell.
   believing a setting took effect.
 - **No component container, on purpose.** Zero-copy needs two C++ nodes in
   one process. The RPi hosts no container (nothing else in this workspace
-  creates one; `ros2_control_node` is a standalone process), and the only
-  consumer of the depth image is this package's rclpy reduction, which
-  cannot be composed at all. So the depth crosses DDS on loopback:
-  424x240x2 B at 15 Hz is ~3 MB/s, which is affordable. Rewriting the
-  reduction in C++ for a higher frame rate is the change that would make a
-  container worth introducing.
+  creates one; `ros2_control_node` is a standalone process). So the depth
+  crosses DDS on loopback: 424x240x2 B at 15 Hz is ~3 MB/s, which is
+  affordable. The SLAM nodes are C++ and composable, so moving them into
+  the driver's process is the change that would make a container worth
+  introducing -- once the SLAM runs on the robot at a rate where the
+  serialisation shows up.
 - **Pitch beats sensor noise.** 1 deg of camera pitch error puts a floor
   point 52 mm off at 3 m; the sensor's own noise there is ~33 mm. A constant
   mounting error reads downstream as a permanent phantom obstacle. Measure
