@@ -105,3 +105,29 @@ def test_staging_brings_the_props_along():
     assert (scene.parent / "props" / "stop_sign.png").is_file()
     # And the staged copy still compiles, which is the whole point of it.
     assert mujoco.MjModel.from_xml_path(str(scene)).ngeom > 0
+
+
+def test_slam_room_keeps_the_robot_and_gives_it_walls(staged):
+    """config/scene_slam.xml: the same robot (qpos layout untouched), a
+    closed room around the spawn, and no repeating floor -- a checkerboard
+    is what made the first SLAM session close wrong loops."""
+    empty = _load(staged, "scene_mjx.xml")
+    room = _load(staged, "scene_slam.xml")
+    assert (room.nq, room.nv, room.nu) == (empty.nq, empty.nv, empty.nu)
+    names = {mujoco.mj_id2name(room, mujoco.mjtObj.mjOBJ_GEOM, i) for i in range(room.ngeom)}
+    assert {"wall_n", "wall_s", "wall_e", "wall_w", "island_block", "floor"} <= names
+    floor = mujoco.mj_name2id(room, mujoco.mjtObj.mjOBJ_GEOM, "floor")
+    # Its own floor material, not the training scene's checker.
+    assert mujoco.mj_id2name(
+        room, mujoco.mjtObj.mjOBJ_MATERIAL, room.geom_matid[floor]
+    ) == "slam_floor"
+    # The spawn is inside the room and clear of every wall and crate.
+    data = mujoco.MjData(room)
+    mujoco.mj_resetDataKeyframe(room, data, room.key("home").id)
+    mujoco.mj_forward(room, data)
+    body = mujoco.mj_name2id(room, mujoco.mjtObj.mjOBJ_BODY, "room")
+    touching_room = [
+        c for c in data.contact[: data.ncon]
+        if body in (room.geom_bodyid[c.geom1], room.geom_bodyid[c.geom2])
+    ]
+    assert not touching_room

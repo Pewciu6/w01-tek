@@ -27,8 +27,12 @@ import numpy as np
 # -- image geometry ----------------------------------------------------------
 DEPTH_WIDTH, DEPTH_HEIGHT = 424, 240
 DEPTH_FX = DEPTH_FY = 209.0          # 418 at 848x480, halved by decimation
-# Colour is for the VLM: contract = topic + encoding, resolution is a knob.
-COLOR_WIDTH, COLOR_HEIGHT = 640, 360
+# Colour is for the VLM and for SLAM: contract = topic + encoding, resolution
+# is a knob -- with one constraint. Both images render from the same MJCF
+# camera, so depth is pixel-registered to colour by construction, and
+# RTAB-Map takes such a pair only when colour is an integer multiple of
+# depth. 2x the 424x240 depth; 640x360 was not a multiple.
+COLOR_WIDTH, COLOR_HEIGHT = 848, 480
 COLOR_ENCODING = "rgb8"
 
 # Vertical FOV the render must use so that fy comes out at DEPTH_FY.

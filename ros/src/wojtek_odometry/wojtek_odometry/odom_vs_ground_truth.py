@@ -27,6 +27,9 @@ def _yaw(qx, qy, qz, qw):
 class OdomVsGroundTruth(Node):
     def __init__(self):
         super().__init__("odom_vs_ground_truth")
+        # See odom_trace: base_link_gt when leg_odometry owns the odom edge.
+        self.declare_parameter("ground_truth_frame", "base_link")
+        self._gt_frame = self.get_parameter("ground_truth_frame").value
         self._tf = Buffer()
         self._listener = TransformListener(self._tf, self)
         self._odom = None
@@ -34,7 +37,8 @@ class OdomVsGroundTruth(Node):
         self._gt_prev = None
         self._distance = 0.0
         self.create_timer(1.0, self._tick)
-        self.get_logger().info("comparing /wojtek/odom against TF odom->base_link")
+        self.get_logger().info(
+            f"comparing /wojtek/odom against TF odom->{self._gt_frame}")
 
     def _on_odom(self, msg):
         self._odom = msg
@@ -48,7 +52,7 @@ class OdomVsGroundTruth(Node):
 
     def _tick(self):
         try:
-            tf = self._tf.lookup_transform("odom", "base_link", rclpy.time.Time())
+            tf = self._tf.lookup_transform("odom", self._gt_frame, rclpy.time.Time())
         except Exception:  # noqa: BLE001 -- not up yet; keep waiting
             return
         if self._odom is None:

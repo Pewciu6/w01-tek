@@ -27,20 +27,28 @@ ESKF's yaw drift on top of these numbers.
 
 Outputs `/wojtek/odom` (nav_msgs/Odometry, twist in base frame) and
 `/wojtek/odom/debug` (`[4x knee |tau|, 4x stance flag]`, for threshold
-tuning). TF `odom->base_link` only with `publish_tf:=true` — off by
-default because the sim's ground truth and (on the robot)
-launch_common's static identity own that edge today; replacing the
-static transform is a deliberate, separate step.
+tuning). TF `odom->base_link` with `publish_tf:=true`: the bringup's
+`leg_odom` switch (on by default on the robot, off in the sim, where the
+ground truth owns the edge unless a run asks otherwise).
 
 ## Testing in simulation
 
-1. `ros2 launch wojtek_pc sim.launch.py` (hw:=mujoco), then the usual
-   zero / stand_up / arm sequence.
-2. `ros2 run wojtek_odometry leg_odometry_node`
-3. `ros2 run wojtek_odometry odom_vs_ground_truth` — prints position/yaw
-   error and drift % of distance once a second.
-4. Drive from the web console (localhost:8080), a pad, or
-   `teleop_twist_keyboard`.
+Two ways to have the node up:
+
+- `ros2 launch wojtek_pc sim.launch.py leg_odom:=true` -- the bringup runs
+  it with the robot's parameters, it owns `odom->base_link`, and the
+  plant's ground truth moves to `odom->base_link_gt`. This is the
+  configuration the SLAM builds on (`slam:=true`). Point the drift meters
+  at the truth: `--ros-args -p ground_truth_frame:=base_link_gt`.
+- `ros2 launch wojtek_pc sim.launch.py` and `ros2 run wojtek_odometry
+  leg_odometry_node` by hand -- TF stays the ground truth, the node only
+  publishes `/wojtek/odom`, the meters' default `base_link` is right.
+
+Then, either way: the usual zero / stand_up / arm sequence,
+`ros2 run wojtek_odometry odom_vs_ground_truth` (position/yaw error and
+drift % of distance once a second; `odom_trace` for the RViz trails), and
+drive from the web console (localhost:8080), a pad, or
+`teleop_twist_keyboard`.
 
 Start the odometry node before driving: it zeroes its yaw at the first
 IMU sample and the drift meter assumes both poses share their origin.

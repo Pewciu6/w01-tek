@@ -52,7 +52,7 @@ Visualization Manager:
       Name: CloudMap
       Enabled: true
       Topic:
-        Value: /cloud_map/points
+        Value: /rtabmap/cloud_map
         Depth: 1
       Style: Points
       Size (Pixels): 3

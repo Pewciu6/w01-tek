@@ -1,0 +1,105 @@
+# RTAB-Map settings for mapping from a walking, fixed-camera quadruped.
+#
+# An ordinary ROS parameter file loaded by the rtabmap node itself
+# (--params-file); the launch layers its own topic/frame wiring on top.
+# `/**/rtabmap` targets the node by name whatever namespace it runs in.
+#
+# Two kinds of keys. Lower-case ones are the ROS wrapper's (frames, sync,
+# TF). "Group/Name" ones are the RTAB-Map library's and MUST be strings --
+# the wrapper forwards them verbatim and rejects a bare number/bool. The
+# full list with defaults: `ros2 run rtabmap_slam rtabmap --params`.
+#
+# What is deliberate here, and why (defaults are not repeated):
+#
+#   Reg/Force3DoF false          The body pitches/rolls a few degrees with
+#                                every step and the odometry carries that
+#                                (roll/pitch straight from the IMU). 3DoF
+#                                would strip it and paste each frame level,
+#                                which turns a flat floor into a washboard.
+#                                Planarity enters only through z, which the
+#                                odometry keeps near zero itself.
+#   Reg/Strategy 0 (visual)      Loop-closure transforms from image features
+#                                (PnP with depth), not ICP: a 70 deg depth
+#                                cone is under-constrained along a corridor
+#                                wall for ICP, texture is not.
+#   Rtabmap/DetectionRate 2      Ticks per second the graph can grow at.
+#                                1 (default) with RGBD/AngularUpdate 0.1
+#                                left 29 deg between nodes during a 0.5
+#                                rad/s turn in place -- and turning in place
+#                                is how a head-fixed camera scans a room.
+#   RGBD/AngularUpdate 0.1       Node when moved 0.1 m or 0.1 rad (6 deg),
+#   RGBD/LinearUpdate 0.1        whichever first. With 70 deg of view the
+#                                overlap between neighbours stays large.
+#   RGBD/ProximityBySpace true   Try registration against nodes the odometry
+#                                says are near but that are not linked yet:
+#                                the local counterpart of loop closure, and
+#                                the only one that fires without leaving and
+#                                re-entering a place.
+#   RGBD/OptimizeMaxError 3      Reject a closure whose optimisation residual
+#                                is 3x the link's own covariance: a wrong
+#                                match on repetitive geometry does more
+#                                damage than a missed one.
+#   Grid/RangeMax 3.0            The camera bringup clips depth at 3 m for
+#                                the same reason (radial noise beyond a map
+#                                cell); this keeps the grid honest if the
+#                                driver's clip is ever raised.
+#   Grid/CellSize 0.05           5 cm, the resolution the noise budget in
+#                                the camera bringup is written against.
+#   Grid/RayTracing true         Clear cells between camera and hit: the one
+#                                thing the old accumulated cloud could not
+#                                do, so anything that moved stayed forever.
+#   Grid/* segmentation          Left at the library defaults (ground by
+#                                normals, flat raised surfaces count as
+#                                obstacles). What is ground and what is an
+#                                obstacle TO THIS DOG depends on its step
+#                                height and on the commanded stand height,
+#                                which moves the floor in base_link -- a
+#                                navigation question, tuned when Nav2
+#                                consumes the grid, not here. The 3D cloud
+#                                is the product this file is written for.
+#   Mem/ImagePreDecimation 2     Feature extraction on a half-size colour
+#                                image. 1280x720 (the real camera's colour,
+#                                sized for the VLM) is 4x the pixels the
+#                                features need.
+#   Optimizer/Strategy 2 (GTSAM) The wrapper's default; listed so a build
+#                                without GTSAM fails loudly here, not
+#                                silently mid-run.
+
+/**/rtabmap:
+  ros__parameters:
+    # -- inputs --------------------------------------------------------
+    subscribe_rgbd: true          # the synchronised pair from rgbd_sync
+    subscribe_depth: false
+    subscribe_rgb: false
+    subscribe_scan: false
+    subscribe_odom: false         # odometry from TF (odom_frame_id), which
+                                  # interpolates to the image stamp; an odom
+                                  # message would be nearest-sample only
+    approx_sync: false            # one input, nothing to approximate
+    qos_image: 2                  # best effort: matches the sensor-data
+    qos_camera_info: 2            # QoS of both the sim camera and the
+                                  # driver, and accepts reliable publishers
+    # Covariance the odometry edge gets when it comes from TF (no message to
+    # read it from). Same values leg_odometry_node writes into /wojtek/odom.
+    odom_tf_linear_variance: 0.001
+    odom_tf_angular_variance: 0.001
+    wait_for_transform: 0.2
+    # -- outputs -------------------------------------------------------
+    publish_tf: true              # map->odom, the correction
+    map_always_update: false      # republish the grid only when the graph
+                                  # changed (a node or a closure), not per
+                                  # tick
+    # -- RTAB-Map library ----------------------------------------------
+    Reg/Force3DoF: "false"
+    Reg/Strategy: "0"
+    Rtabmap/DetectionRate: "2"
+    RGBD/AngularUpdate: "0.1"
+    RGBD/LinearUpdate: "0.1"
+    RGBD/ProximityBySpace: "true"
+    RGBD/OptimizeMaxError: "3.0"
+    Grid/RangeMax: "3.0"
+    Grid/CellSize: "0.05"
+    Grid/3D: "true"
+    Grid/RayTracing: "true"
+    Mem/ImagePreDecimation: "2"
+    Optimizer/Strategy: "2"

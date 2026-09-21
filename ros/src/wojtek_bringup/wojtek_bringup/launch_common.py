@@ -46,6 +46,23 @@ from launch_ros.substitutions import FindPackageShare
 from wojtek_policy.policy_source import active_policy, load_policy
 
 
+def resolve_scene(model_xml):
+    """The MuJoCo scene file a simulation loads, from the model_xml argument.
+
+    Empty picks wojtek_pc's furnished scene_sim.xml; a bare file name
+    (`model_xml:=scene_slam.xml`) is one of wojtek_pc's config/ scenes; a
+    path is taken as given. One function for the two loaders of the scene
+    (the plant inside ros2_control and the camera renderer), so they cannot
+    resolve the same argument two ways and simulate different worlds.
+    """
+    config = os.path.join(get_package_share_directory("wojtek_pc"), "config")
+    if not model_xml:
+        return os.path.join(config, "scene_sim.xml")
+    if os.sep not in model_xml:
+        return os.path.join(config, model_xml)
+    return model_xml
+
+
 def _cpu_prefix(context, arg):
     """A taskset prefix from a comma list of cores, or nothing when empty.
 
@@ -83,6 +100,10 @@ def _launch_setup(context, with_rviz, hardware):
              f"{drive_torque:g}" if tau_ff_on else ""))
 
     use_imu = LaunchConfiguration("use_imu")
+    # Who owns odom->base_link: the leg-kinematics + IMU odometry (the robot,
+    # and the sim when a map is to inherit the odometry's honest drift) or
+    # the platform's placeholder (static identity / the sim's ground truth).
+    leg_odom = LaunchConfiguration("leg_odom").perform(context).lower() in ("true", "1")
     # The servo contract (gains, torque cap), the IMU switch and the bench flag
     # are the same question on both sides, so they go to both xacros. What
     # differs is what the plugin needs to reach its hardware: a CAN link and an
@@ -113,10 +134,13 @@ def _launch_setup(context, with_rviz, hardware):
         xacro_args += [
             " hw:=", LaunchConfiguration("hw"),
             " boot_pose:=", LaunchConfiguration("boot_pose"),
-            " model_xml:=" + (
+            " model_xml:=" + resolve_scene(
                 LaunchConfiguration("model_xml").perform(context)
-                or os.path.join(pc_share, "config", "scene_sim.xml")
             ),
+            # Where the plant broadcasts the TRUE base pose. With the leg
+            # odometry owning odom->base_link the truth steps aside to
+            # base_link_gt, still in TF for RViz and the drift meters.
+            " ground_truth_frame:=" + ("base_link_gt" if leg_odom else "base_link"),
         ]
     robot_description = ParameterValue(
         Command(["xacro ", xacro_file] + xacro_args), value_type=str,
@@ -139,7 +163,7 @@ def _launch_setup(context, with_rviz, hardware):
     # fits (2026-08-24, with perception + odometry + the on-robot map):
     #   core 3: ros2_control (RT loop) + real_io        ~65%
     #   core 2: policy + leg_odometry                   ~65%
-    #   cores 0,1 (with the OS): camera driver, the accumulated map,
+    #   cores 0,1 (with the OS): camera driver, the SLAM (when on),
     #     pad/joy/robot_state_publisher -- UI-rate, none of it
     #     control-critical, all fine sharing with the system.
     # SCHED_FIFO keeps the control loop preemptive over its core-mate
@@ -187,35 +211,38 @@ def _launch_setup(context, with_rviz, hardware):
             remappings=[("joint_states", "wojtek/joint_states_abs")],
             prefix=ui_prefix,
         ),
-        # The odom->base_link edge. On the real robot leg_odometry owns it
-        # (below); the static identity stays only as the no-IMU fallback so
-        # bench runs still render in RViz. A physics-backed simulation knows
-        # the true base pose and publishes the transform itself, so there
-        # the static one would fight it.
+        # The odom->base_link edge has exactly one owner per run:
+        #   leg_odom:=true   leg_odometry (the robot's default; needs the IMU)
+        #   otherwise        the sim's physics ground truth (hw:=mujoco), or
+        #                    a static identity so a bench / mock run still
+        #                    renders in RViz.
         Node(
             package="tf2_ros",
             executable="static_transform_publisher",
             arguments=["--frame-id", "odom", "--child-frame-id", "base_link"],
-            condition=IfCondition(
-                PythonExpression(["'", LaunchConfiguration("hw"), "' != 'mujoco'"])
-            ) if hardware == "sim" else UnlessCondition(use_imu),
+            condition=IfCondition(PythonExpression([
+                "'", LaunchConfiguration("hw"), "' != 'mujoco' and not ", str(leg_odom),
+            ])) if hardware == "sim" else UnlessCondition(PythonExpression([
+                "'", use_imu, "' == 'true' and ", str(leg_odom),
+            ])),
         ),
-        # Leg-kinematics + IMU odometry, on the robot itself: autonomy keeps
-        # no PC in the loop, and cloud_accumulate/nav consume wojtek/odom
-        # locally. Publishes the odom->base_link TF (deliberately replacing
-        # the static identity above). Needs the IMU, hence the gate.
+        # Leg-kinematics + IMU odometry. On the robot itself: autonomy keeps
+        # no PC in the loop, and the SLAM/nav consume wojtek/odom locally.
+        # In the sim on request (leg_odom:=true), so a map built on top of
+        # it inherits the odometry's real drift instead of the ground truth
+        # -- the same node, the same parameters, the same TF edge.
         Node(
             package="wojtek_odometry",
             executable="leg_odometry_node",
             output="screen",
             prefix=aux_prefix,
-            # input_stride 2: the abs joint stream arrives at ~50 Hz on the
-            # robot (joint_state_broadcaster's rate), and the per-message
-            # kinematics costs ~6 ms on the A72 -- 25 Hz processing fits
-            # the core budget; full rate does not (see the node).
+            # input_stride 2: the abs joint stream arrives at ~50 Hz
+            # (joint_state_broadcaster's rate), and the per-message
+            # kinematics costs ~6 ms on the robot's A72 -- 25 Hz processing
+            # fits the core budget; full rate does not (see the node).
             parameters=[{"publish_tf": True, "input_stride": 2}],
             condition=IfCondition(use_imu),
-        ) if hardware == "real" else None,
+        ) if leg_odom else None,
         Node(
             package="wojtek_bringup",
             executable="real_io_node",
@@ -537,17 +564,55 @@ def common_launch_description(
             ),
             launch_arguments={
                 "cpus": LaunchConfiguration("perception_cpus"),
-                # 6 fps on both streams: the only depth consumer left is
-                # the accumulated map (~2 processed frames/s), and rclpy
-                # pays a fixed per-message deserialization cost for every
-                # frame it receives -- at 15 fps that alone saturated a
-                # Pi 4 core together with the driver. Colour rides along:
+                # 6 fps on both streams: the depth consumer is the SLAM,
+                # which keys at ~2 Hz, and the driver's post-processing at
+                # 15 fps alone saturated a Pi 4 core. Colour rides along:
                 # the RGBD product pairs depth with colour, so their rates
                 # must match, and the VLM decides at ~0.3-0.5 Hz anyway.
                 "depth_profile": "848x480x6",
                 "color_profile": "1280x720x6",
             }.items(),
             condition=IfCondition(LaunchConfiguration("perception")),
+        ),
+        # Owner of odom->base_link, see _launch_setup. The robot's default is
+        # its own odometry; the sim's is the ground truth, until a run wants
+        # the odometry's drift in the picture (the SLAM sessions do).
+        DeclareLaunchArgument(
+            "leg_odom", default_value="true" if hardware == "real" else "false",
+        ),
+        # RGB-D SLAM (wojtek_slam, RTAB-Map): map->odom, the 3D cloud and
+        # the 2D grid, a database per session. Off by default, like the
+        # camera: it is not on the control path, and its packages need not
+        # be installed for the stack to come up. Needs the camera streams
+        # (perception:=true on the robot, the virtual camera in the sim)
+        # and the leg odometry under it (leg_odom:=true in the sim).
+        DeclareLaunchArgument("slam", default_value="false"),
+        DeclareLaunchArgument(
+            "slam_cpus", default_value="0,1" if hardware == "real" else "",
+        ),
+        IncludeLaunchDescription(
+            PathJoinSubstitution(
+                [FindPackageShare("wojtek_slam"), "launch", "slam.launch.py"]
+            ),
+            launch_arguments={
+                "cpus": LaunchConfiguration("slam_cpus"),
+                # Depth REGISTERED to colour: the driver's aligned product
+                # on the robot; in the sim one render camera draws both
+                # images, so the raw depth already is.
+                "depth_topic": (
+                    "/camera/camera/aligned_depth_to_color/image_raw"
+                    if hardware == "real"
+                    else "/camera/camera/depth/image_rect_raw"
+                ),
+                # The sim's true pose, recorded per map node so rtabmap's
+                # own report measures the map's error. Only meaningful
+                # when the truth is NOT what the map is built on.
+                "ground_truth_frame_id": PythonExpression([
+                    "'odom' if '", LaunchConfiguration("leg_odom"),
+                    "'.lower() in ('true', '1') else ''",
+                ]) if hardware == "sim" else "",
+            }.items(),
+            condition=IfCondition(LaunchConfiguration("slam")),
         ),
         # The deck panel (wojtek_deck): a browser cockpit for a handheld on
         # the robot's wifi. On in the simulation (open http://localhost:8090),

@@ -1,6 +1,7 @@
 # Architektura ROS stacka (`ros/src`)
 
-Stan na 2026-07-31 (branch `jakuc/CANdle_hat+BMI_9DOF` + #91 kamera, #92 text_commander).
+Stan na 2026-07-31 (branch `jakuc/CANdle_hat+BMI_9DOF` + #91 kamera, #92 text_commander);
+sekcje 8–9 (odometria, SLAM) dopisane 2026-09-21 na `jakuc/autonomy`.
 
 Stack dzieli się na trzy warstwy:
 
@@ -286,6 +287,67 @@ od powłoki rclpy i testowana bez ROS-a (`test/test_text_commander.py`).
 Parametry: `v_forward` (0.3 m/s), `w_turn` (0.5 rad/s), `command_timeout`
 (2.0 s — dead-man: VLM musi mówić, żeby Wojtek szedł). Test z CLI:
 `ros2 topic pub -1 /wojtek/nav_command std_msgs/String "data: forward"`.
+
+## 8. `wojtek_odometry` — odometria nóg + IMU (Python, ament_python)
+
+Źródło `odom` dla nawigacji: stopa w stance jest przyszpilona do podłogi,
+więc jakobian każdej nogi w stance mierzy prędkość korpusu; średnia po
+zbiorze stance obracana orientacją z IMU i całkowana do pozy planarnej
+(roll/pitch wprost z IMU, z = 0). Kontakt z **wysokości stopy** po
+wypoziomowaniu IMU (moment kolana tylko jako próg odciążenia — zmierzone,
+że sam moment nie oddziela stance od swing). Szczegóły i zmierzony dryf
+(1–3 % dystansu w symie) w README pakietu.
+
+| Kierunek | Interfejs | Typ |
+|---|---|---|
+| sub | `/wojtek/joint_states_abs`, `/joint_states` (moment), `/imu_sensor_broadcaster/imu` | |
+| pub | `/wojtek/odom` (twist w ramce korpusu) | `nav_msgs/Odometry` |
+| pub TF | `odom→base_link` (gdy `publish_tf`) | |
+
+**Kto jest właścicielem `odom→base_link`** decyduje jeden argument
+bringupu, `leg_odom`: na robocie domyślnie ta odometria; w symulacji
+domyślnie ground truth z pluginu MuJoCo, a `leg_odom:=true` przełącza na
+odometrię i przesuwa prawdę do `odom→base_link_gt` (parametr
+`ground_truth_child_frame` pluginu) — mapa budowana na odometrii
+dziedziczy wtedy jej prawdziwy dryf, a prawda zostaje w TF dla mierników
+(`odom_vs_ground_truth`, `odom_trace`, parametr `ground_truth_frame`).
+
+## 9. `wojtek_slam` — SLAM RGB-D (launch + config)
+
+RTAB-Map nad strumieniami D435 i odometrią nóg. Komponuje dwa węzły
+third-party (`rtabmap_sync/rgbd_sync`, `rtabmap_slam/rtabmap`) wokół
+`config/rtabmap.yaml`, tak jak `wojtek_perception_bringup` komponuje
+driver kamery. Właściciel `map→odom`; produkty: `/rtabmap/cloud_map`
+(3D), `/rtabmap/map` (siatka 2D pod Nav2), baza `~/wojtek_maps/map_<stamp>.db`
+(cały graf z obrazami — źródło eksportu PLY/mesh i trybu lokalizacji).
+
+Zasada działania, która ustawia całą resztę: **między domknięciami pętli
+poza jest w 100 % z odometrii**. RTAB-Map dokłada węzeł co 0,1 m / 6°,
+łączy go z poprzednim przyrostem odometrii, a korekta `map→odom` powstaje
+tylko, gdy cechy wizualne bieżącego węzła dopasują się do wcześniejszego
+(loop closure / proximity) i graf się zoptymalizuje. Cechy są z obrazu
+kolorowego, więc pętla domyka się tylko z podobnego kierunku patrzenia —
+stąd protokół teleop: obrót 360° w miejscu na starcie, na skrzyżowaniach
+i na końcu trasy. Odometria wchodzi przez **TF** (interpolacja do stempla
+obrazu), nie przez topic. `Reg/Force3DoF` = false: korpus kroczącego
+robota ma roll/pitch z IMU i mapa ma je uwzględniać.
+
+Wejście głębi musi być **zarejestrowane do koloru**: na robocie
+`aligned_depth_to_color` (70° FOV — jedyny konsument, dla którego ta
+strata jest właściwa), w symie surowa głębia (jedna kamera renderuje oba
+obrazy; kolor 848x480 = 2× głębia, bo RTAB-Map wymaga całkowitej
+krotności).
+
+Zmierzone w symie (21.09.2026, `scene_slam.xml`, pętla 13,5 m): odometria
+RMSE 0,091 m, SLAM 0,085 m, 38 domknięć — wszystkie poprawne; na końcu
+pętli błąd 0,21 m (odom) → 0,07 m (SLAM). **Na szachownicy sceny
+treningowej: 2 domknięcia, oba błędne, mapa obrócona o 90°** — stąd
+osobna scena `wojtek_pc/config/scene_slam.xml` (pokój z niepowtarzalnymi
+teksturami). Na robocie jeszcze nie uruchomiony; plan: SLAM na PC ze
+strumieni robota, onboard po zmierzeniu budżetu rdzeni.
+
+Zastąpił `cloud_accumulate_node` z `wojtek_perception_bringup` (sklejanie
+chmury w `odom` bez domknięć i bez czyszczenia) — usunięty 2026-09.
 
 ---
 

@@ -8,6 +8,7 @@ virtual camera, RViz, the operator console and optionally a gamepad.
                                        [boot_pose:=folded] [camera:=false]
                                        [console:=web|qt|none] [gamepad:=true]
                                        [telemetry:=true] [deck:=false]
+                                       [leg_odom:=true slam:=true]
 
 This is `robot.launch.py` with the hardware plugin swapped -- same
 controller_manager at 400 Hz, same broadcasters, same real_io_node, same
@@ -51,11 +52,21 @@ camera:=false turns off the D435-compatible virtual camera (on by default;
 the off-switch for weak machines). It needs a physics-backed plant, so it is
 inert with hw:=mock. camera_depth_hz/camera_color_hz tune the render rates.
 
+A mapping session: leg_odom:=true slam:=true. The leg odometry then owns
+odom->base_link (the ground truth moves to base_link_gt, still in TF) and
+wojtek_slam builds its map on top of it, so the map inherits the odometry's
+honest drift and its loop closures have something to correct. Drive as
+above; the map database lands in ~/wojtek_maps. See wojtek_slam/README.md.
+
 The world the camera draws is config/scene_sim.xml: the training scene plus
 a ball, a fire hydrant, a traffic light, a stop sign, a clock and a person
 standing around the spawn, so the deck panel's detector has something to
 name. The plant loads the same file, so they are solid. model_xml:= takes
-you back to the empty floor (config/scene_mjx.xml) or anywhere else.
+you back to the empty floor (model_xml:=scene_mjx.xml), into the walled
+room the SLAM sessions use (model_xml:=scene_slam.xml -- the checkerboard
+floor of the training scene is the worst thing a visual place recogniser
+can look at, every place is the same place rotated by 90 degrees), or
+anywhere else by path.
 
 telemetry:=true adds /wojtek/sysinfo and /wojtek/policy_timing, the same
 opt-in the robot service uses. It is off by default here too. The Foxglove bridge
@@ -65,8 +76,7 @@ nothing else holds port 8765.
 
 import os
 
-from ament_index_python.packages import get_package_share_directory
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import (
     EqualsSubstitution,
@@ -76,7 +86,44 @@ from launch.substitutions import (
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
-from wojtek_bringup.launch_common import common_launch_description
+from wojtek_bringup.launch_common import common_launch_description, resolve_scene
+
+
+def _camera_node(context):
+    return [
+        Node(
+            package="wojtek_pc",
+            executable="sim_camera_node",
+            output="screen",
+            # Rendering needs a GL backend named up front: left to guess inside
+            # the container MuJoCo picks one whose library is missing and
+            # ABORTS the process instead of raising. An explicit MUJOCO_GL in
+            # the environment still wins.
+            additional_env={"MUJOCO_GL": os.environ.get("MUJOCO_GL", "egl")},
+            condition=IfCondition(
+                PythonExpression([
+                    "'", LaunchConfiguration("camera"),
+                    "'.lower() in ('true', '1') and '",
+                    LaunchConfiguration("hw"), "' == 'mujoco'",
+                ])
+            ),
+            parameters=[
+                {
+                    # Resolved by the same function the plant's launch uses:
+                    # one scene, one physics state.
+                    "model_xml": resolve_scene(
+                        LaunchConfiguration("model_xml").perform(context)
+                    ),
+                    "depth_hz": ParameterValue(
+                        LaunchConfiguration("camera_depth_hz"), value_type=float
+                    ),
+                    "color_hz": ParameterValue(
+                        LaunchConfiguration("camera_color_hz"), value_type=float
+                    ),
+                }
+            ],
+        ),
+    ]
 
 
 def generate_launch_description():
@@ -96,42 +143,7 @@ def generate_launch_description():
         DeclareLaunchArgument("camera", default_value="true"),
         DeclareLaunchArgument("camera_depth_hz", default_value="15.0"),
         DeclareLaunchArgument("camera_color_hz", default_value="5.0"),
-        Node(
-            package="wojtek_pc",
-            executable="sim_camera_node",
-            output="screen",
-            # Rendering needs a GL backend named up front: left to guess inside
-            # the container MuJoCo picks one whose library is missing and
-            # ABORTS the process instead of raising. An explicit MUJOCO_GL in
-            # the environment still wins.
-            additional_env={"MUJOCO_GL": os.environ.get("MUJOCO_GL", "egl")},
-            condition=IfCondition(
-                PythonExpression([
-                    "'", LaunchConfiguration("camera"),
-                    "'.lower() in ('true', '1') and '",
-                    LaunchConfiguration("hw"), "' == 'mujoco'",
-                ])
-            ),
-            parameters=[
-                {
-                    "model_xml": PythonExpression([
-                        "'", LaunchConfiguration("model_xml"), "' or ",
-                        repr(os.path.join(
-                            get_package_share_directory("wojtek_pc"),
-                            # Same default the plant gets in
-                            # launch_common: one scene, one physics state.
-                            "config", "scene_sim.xml",
-                        )),
-                    ]),
-                    "depth_hz": ParameterValue(
-                        LaunchConfiguration("camera_depth_hz"), value_type=float
-                    ),
-                    "color_hz": ParameterValue(
-                        LaunchConfiguration("camera_color_hz"), value_type=float
-                    ),
-                }
-            ],
-        ),
+        OpaqueFunction(function=_camera_node),
         # Text-command bridge (wojtek#92), resident by design -- see the
         # module docstring for why that is safe.
         Node(

@@ -1,0 +1,116 @@
+<!--
+  The world the SLAM sessions map: a walled room around the spawn.
+
+  Not built on scene_sim.xml, because that one stands on the training
+  scene's checkerboard floor, and a checkerboard is the worst thing a
+  visual place recogniser can look at: every square metre is every other
+  square metre, rotated by any multiple of 90 degrees. Measured on the
+  first session there (2026-09-21): two loop closures accepted, both
+  wrong, the map turned by 90 degrees, RMSE 0.82 m where the odometry
+  alone was 0.085 m. So this file includes the robot directly and lays
+  its own floor.
+
+  What makes a room mappable by a head-fixed 70-degree camera at 0.2 m:
+
+    * texture that does not repeat: the floor and each wall wear a flat
+      colour with random dots (MuJoCo's mark="random"), one tile per room,
+      so a place looks like itself and only itself. Every surface has a
+      different colour so a wall is never mistaken for another wall.
+    * walls to see: 8 x 6 m, 1.0 m high. The camera looks 15 degrees down
+      and at 2 m the top of its view is ~0.75 m up, so higher walls only
+      cost fill rate.
+    * a loop to close: the island in the middle makes a circuit the robot
+      can walk around and come back to its start facing the same way,
+      which is when a camera-based loop closure can fire at all.
+    * a few boxes along the walls, so the 3D map has something worth
+      reconstructing and the grid has obstacles.
+
+  Both halves of the simulation load this file (the plant in ros2_control
+  and the camera renderer), so everything here is solid. Static bodies,
+  no joints: qpos keeps the robot-only layout the plugin publishes.
+
+    ros2 launch wojtek_pc sim.launch.py model_xml:=scene_slam.xml leg_odom:=true slam:=true
+-->
+<mujoco model="wojtek_slam_scene">
+  <include file="wojtek_mjx.xml"/>
+  <statistic center="0 0 0.15" extent="0.8"/>
+  <visual>
+    <headlight diffuse="0.5 0.5 0.5" ambient="0.5 0.5 0.5" specular="0 0 0"/>
+    <global azimuth="120" elevation="-20"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <!-- One 1024-px tile stretched over the whole room (texuniform +
+         texrepeat 1/8 per metre): the dot pattern never repeats within
+         the walls. Different widths and colours per surface give each
+         its own pattern, not the same pattern recoloured. -->
+    <texture type="2d" name="slam_floor" builtin="flat" mark="random" random="0.03"
+             rgb1="0.55 0.52 0.47" markrgb="0.15 0.13 0.12" width="1024" height="1024"/>
+    <material name="slam_floor" texture="slam_floor" texuniform="true" texrepeat="0.125 0.125" reflectance="0"/>
+    <texture type="2d" name="wall_n" builtin="flat" mark="random" random="0.04"
+             rgb1="0.80 0.78 0.70" markrgb="0.25 0.20 0.15" width="1000" height="500"/>
+    <material name="wall_n" texture="wall_n" texuniform="true" texrepeat="0.125 0.5"/>
+    <texture type="2d" name="wall_s" builtin="flat" mark="random" random="0.04"
+             rgb1="0.62 0.72 0.80" markrgb="0.10 0.15 0.30" width="1016" height="508"/>
+    <material name="wall_s" texture="wall_s" texuniform="true" texrepeat="0.125 0.5"/>
+    <texture type="2d" name="wall_e" builtin="flat" mark="random" random="0.04"
+             rgb1="0.75 0.62 0.55" markrgb="0.30 0.12 0.08" width="984" height="492"/>
+    <material name="wall_e" texture="wall_e" texuniform="true" texrepeat="0.167 0.5"/>
+    <texture type="2d" name="wall_w" builtin="flat" mark="random" random="0.04"
+             rgb1="0.66 0.76 0.62" markrgb="0.12 0.28 0.10" width="1008" height="504"/>
+    <material name="wall_w" texture="wall_w" texuniform="true" texrepeat="0.167 0.5"/>
+    <texture type="2d" name="island" builtin="flat" mark="random" random="0.05"
+             rgb1="0.50 0.45 0.60" markrgb="0.90 0.88 0.95" width="992" height="496"/>
+    <material name="island" texture="island" texuniform="true" texrepeat="0.5 1"/>
+    <texture type="2d" name="crate" builtin="flat" mark="random" random="0.05"
+             rgb1="0.72 0.55 0.30" markrgb="0.30 0.20 0.08" width="512" height="512"/>
+    <material name="crate" texture="crate" texuniform="true" texrepeat="2 2"/>
+  </asset>
+
+  <worldbody>
+    <geom name="floor" type="plane" size="0 0 0.01" material="slam_floor" condim="3" conaffinity="15"/>
+    <camera name="track" mode="trackcom" pos="0.9 -1.3 0.5" xyaxes="0.83 0.55 0 -0.15 0.23 0.96"/>
+
+    <!-- The room: x in [-4, 4], y in [-3, 3], walls 0.1 thick, 1.0 high.
+         The spawn (origin) sits in the south-west lane, facing +x. -->
+    <body name="room">
+      <geom name="wall_n" type="box" size="4.05 0.05 0.5" pos="0 3.05 0.5"
+            material="wall_n" contype="1" conaffinity="15" group="2"/>
+      <geom name="wall_s" type="box" size="4.05 0.05 0.5" pos="0 -3.05 0.5"
+            material="wall_s" contype="1" conaffinity="15" group="2"/>
+      <geom name="wall_e" type="box" size="0.05 3.0 0.5" pos="4.05 0 0.5"
+            material="wall_e" contype="1" conaffinity="15" group="2"/>
+      <geom name="wall_w" type="box" size="0.05 3.0 0.5" pos="-4.05 0 0.5"
+            material="wall_w" contype="1" conaffinity="15" group="2"/>
+    </body>
+
+    <!-- The island: a 2.4 x 0.8 m block, 0.6 m high, north of the spawn.
+         The circuit around it -- east along y=0, north along x=3.2, west
+         along y=2.5, south along x=-0.5 -- keeps a metre from every solid
+         and is about 12 m long. The spawn faces east along its first leg. -->
+    <body name="island" pos="1.5 1.5 0">
+      <geom name="island_block" type="box" size="1.2 0.4 0.3" pos="0 0 0.3"
+            material="island" contype="1" conaffinity="15" group="2"/>
+    </body>
+
+    <!-- Crates along the walls, off the circuit, different sizes so no two
+         views agree. -->
+    <body name="crate_a" pos="3.3 -2.3 0">
+      <geom name="crate_a_geom" type="box" size="0.35 0.35 0.35" pos="0 0 0.35"
+            material="crate" contype="1" conaffinity="15" group="2"/>
+    </body>
+    <body name="crate_b" pos="-3.2 2.2 0" euler="0 0 0.6">
+      <geom name="crate_b_geom" type="box" size="0.45 0.25 0.25" pos="0 0 0.25"
+            material="crate" contype="1" conaffinity="15" group="2"/>
+    </body>
+    <body name="crate_c" pos="-2.0 -2.5 0" euler="0 0 -0.4">
+      <geom name="crate_c_geom" type="box" size="0.25 0.25 0.5" pos="0 0 0.5"
+            material="crate" contype="1" conaffinity="15" group="2"/>
+    </body>
+    <body name="crate_d" pos="1.0 -2.5 0">
+      <geom name="crate_d_geom" type="box" size="0.3 0.4 0.2" pos="0 0 0.2"
+            material="crate" contype="1" conaffinity="15" group="2"/>
+    </body>
+  </worldbody>
+</mujoco>

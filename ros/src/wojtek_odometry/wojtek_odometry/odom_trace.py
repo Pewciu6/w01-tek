@@ -30,6 +30,11 @@ class OdomTrace(Node):
     def __init__(self):
         super().__init__("odom_trace")
         self.declare_parameter("rate_hz", 5.0)
+        # The frame the plant broadcasts the TRUE pose as: base_link when
+        # the ground truth is the odometry (sim default), base_link_gt when
+        # leg_odometry owns odom->base_link (sim.launch.py leg_odom:=true).
+        self.declare_parameter("ground_truth_frame", "base_link")
+        self._gt_frame = self.get_parameter("ground_truth_frame").value
         self._tf = Buffer()
         self._listener = TransformListener(self._tf, self)
         self._odom = None
@@ -43,7 +48,7 @@ class OdomTrace(Node):
         self._anchor = None  # (gt_xy, gt_yaw, od_xy, od_yaw)
         self.create_timer(1.0 / self.get_parameter("rate_hz").value, self._tick)
         self.get_logger().info(
-            "tracing TF odom->base_link vs /wojtek/odom; add both "
+            f"tracing TF odom->{self._gt_frame} vs /wojtek/odom; add both "
             "/wojtek/odom_trace/* Path displays in RViz")
 
     def _on_odom(self, msg):
@@ -51,7 +56,7 @@ class OdomTrace(Node):
 
     def _tick(self):
         try:
-            tf = self._tf.lookup_transform("odom", "base_link", rclpy.time.Time())
+            tf = self._tf.lookup_transform("odom", self._gt_frame, rclpy.time.Time())
         except Exception:  # noqa: BLE001 -- TF not up yet
             return
         if self._odom is None:

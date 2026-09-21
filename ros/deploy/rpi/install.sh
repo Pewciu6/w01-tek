@@ -73,6 +73,10 @@ provision_packages() {
     # (robot.launch.py foxglove:=true, on by default), so a Foxglove session
     # watches a run live without anything running on the PC.
     local ros_pkgs="ros-${ROS_DISTRO}-ros-base ros-${ROS_DISTRO}-ros2-control ros-${ROS_DISTRO}-ros2-controllers ros-${ROS_DISTRO}-rmw-cyclonedds-cpp ros-${ROS_DISTRO}-xacro ros-${ROS_DISTRO}-robot-state-publisher ros-${ROS_DISTRO}-realtime-tools ros-${ROS_DISTRO}-joy ros-${ROS_DISTRO}-foxglove-bridge"
+    # rtabmap-slam/-sync: the two nodes wojtek_slam launches (robot.launch.py
+    # slam:=true). The SLAM library only, not the rtabmap-ros metapackage,
+    # which would drag the Qt viewer and RViz plugins onto a headless RPi.
+    ros_pkgs="${ros_pkgs} ros-${ROS_DISTRO}-rtabmap-slam ros-${ROS_DISTRO}-rtabmap-sync"
     # setserial: candle runs `setserial <port> low_latency` on the CANdle's
     # ttyACM at startup; without it the driver falls back to "low-speed mode"
     # (see md80 bring-up logs), adding latency to the 400 Hz loop. The PC image

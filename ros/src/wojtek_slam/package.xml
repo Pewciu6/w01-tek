@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>wojtek_slam</name>
+  <version>0.1.0</version>
+  <description>
+    RGB-D SLAM for wojtek: RTAB-Map over the D435 streams and the leg
+    odometry. Owns the map->odom edge and the map products (3D cloud, 2D
+    occupancy grid, the database a session leaves behind).
+
+    Launch plus configuration only: it composes the third-party rtabmap
+    nodes (rgbd_sync, rtabmap) around this package's settings, the way
+    wojtek_perception_bringup composes the camera driver. The odometry it
+    builds on is wojtek_odometry's; the streams are the camera bringup's.
+  </description>
+  <maintainer email="kchmielewski707@gmail.com">Jakub Chmielewski</maintainer>
+  <license>Apache License 2.0</license>
+
+  <!-- The SLAM itself, run as plain nodes configured from config/. -->
+  <exec_depend>rtabmap_slam</exec_depend>
+  <exec_depend>rtabmap_sync</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
