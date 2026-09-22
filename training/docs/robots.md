@@ -72,6 +72,7 @@ block's mass is included in the thigh's inertial.
 | Visual meshes | `ros/src/wojtek_description/meshes/<robot>/` |
 | Config group | `training/wojtek_rl/conf/robot/<robot>.yaml` |
 | URDF leg macro | `ros/src/wojtek_description/urdf/leg_v627.urdf.xacro` |
+| ROS robot profile: legs, joint map, pinned policy, knee clamp | `ros/src/wojtek_policy/wojtek_policy/robots.py` |
 
 The stock robot keeps its original paths in `wojtek_description/mujoco/`. A
 variant never writes to them.
@@ -258,18 +259,44 @@ of the way in from each end for the height steps.
 variant other than the stock one, `height_table` also carries `dthird` and
 `leg_sign`, and `knee_singularity` is `null`. The ROS policy runtime reads
 both. It refuses its `clamp_knee` option for a policy without a knee
-singularity, and the real-robot launch sets `clamp_knee`. A `legs_v627` policy
-therefore does not load on the real robot until that is decided on purpose.
+singularity.
+
+The ROS side picks a robot with a robot profile, in
+`ros/src/wojtek_policy/wojtek_policy/robots.py`. A profile names the training
+variant it runs. A bringup refuses a policy whose `robot` field names another
+variant. A policy exported before the field existed counts as `wojtek`.
+
+| Profile | Variant | Knee clamp | Pinned policy |
+|---|---|---|---|
+| `wojtek` | `wojtek` | on | yes |
+| `wojtek_v2` | `legs_v627` | off | none yet |
+
+A `legs_v627` policy still cannot run on the real robot, because none is
+exportable yet. The preset observes the gait clock, which the ROS runtime does
+not implement, so `export` refuses it. The same holds in a ROS simulation.
 
 ## ROS description
 
 `wojtek_body` in `wojtek_description` takes `legs:=stock` or `legs:=legs_v627`.
-`wojtek_sim.urdf.xacro` passes the same argument through. Both leg macros use
-the same link and joint names, so the `ros2_control` joint list and TF frame
-names do not change.
+`wojtek_sim.urdf.xacro` and `wojtek_real.urdf.xacro` pass the same argument
+through. Both leg macros use the same link and joint names, so the
+`ros2_control` joint list and TF frame names do not change.
 
 The `legs_v627` URDF uses the MuJoCo model's joint angles. The stock URDF has
-gear-correction offsets, which `joint_map.yaml` removes. A MuJoCo plant on
-`legs_v627` needs the variant's scene as `model_xml` and an identity joint map.
-That launch wiring does not exist yet. `wojtek_real.urdf.xacro` is unchanged
-and always describes the stock legs.
+gear-correction offsets, which `joint_map.yaml` removes. The v6.27 legs use
+`joint_map_identity.yaml`, which maps every joint to itself.
+
+`real.launch.py`, `robot.launch.py` and `sim.launch.py` take `robot:=wojtek`,
+the default, or `robot:=wojtek_v2`. The profile sets the xacro `legs`, the joint
+map, `clamp_knee`, and the default policy when no `policy:=` is given. With
+`robot:=wojtek_v2` a MuJoCo plant loads
+`wojtek_description/mujoco/legs_v627/scene_mjx.xml`, which has no props.
+`model_xml:=` still overrides it.
+
+```bash
+ros2 launch wojtek_pc sim.launch.py robot:=wojtek_v2 policy:=<a legs_v627 policy>
+```
+
+`real_io_node` still holds the stock legs' home and folded poses and their
+passive-joint table. Its zero, stand-up and lie-down services are not ready
+for the v6.27 legs.

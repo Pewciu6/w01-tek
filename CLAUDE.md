@@ -168,9 +168,11 @@ self-contained `policy.npz` + `policy_meta.json` (the schema-2 deployment
 contract), keepers publish that pair to their Hugging Face repo, and the
 ROS stack loads a policy by reference -- `policy:=<org/name[@rev] | dir>`
 on the launch files.  A Hugging Face reference is resolved from the
-gitignored policy store (`ros/policies/`).  `ros/deploy.sh` resolves the
-pinned default (see `wojtek_policy/policy_source.py`) into the store and
-syncs the store to the RPi, which has no internet.  `ros/deploy.sh --policy
+gitignored policy store (`ros/policies/`).  The pinned default lives in
+the robot profile (`wojtek_policy/robots.py`), and `WOJTEK_ROBOT` in
+`ros/.env` picks the profile, `wojtek` by default; the launch files take
+the same name as `robot:=`.  `ros/deploy.sh` resolves that pin into the
+store and syncs the store to the RPi, which has no internet.  `ros/deploy.sh --policy
 <ref>` fetches a one-off reference, syncs it, and makes the robot run it, and
 a plain `ros/deploy.sh` returns the robot to the pin.
 Changing the deployed policy is a config change, not a code change.
