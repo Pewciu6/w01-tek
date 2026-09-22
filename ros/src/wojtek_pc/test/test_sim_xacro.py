@@ -119,3 +119,33 @@ def test_other_legs_keep_every_name_the_stack_binds_to(sim):
 def test_unknown_legs_are_refused():
     with pytest.raises(subprocess.CalledProcessError):
         _robot(legs="no_such_legs")
+
+
+def _plugin_params(blocks):
+    return {
+        p.get("name"): p.text for p in blocks[0].find("hardware").findall("param")
+    }
+
+
+def test_joint_map_reaches_the_mujoco_plant():
+    """robot:=wojtek_v2 hands the plant the identity map through this
+    argument. Without it the plant keeps the stock legs' map."""
+    stock = _plugin_params(
+        _ros2_control("wojtek_pc", "urdf/wojtek_sim.urdf.xacro", hw="mujoco")
+    )
+    assert stock["joint_map_yaml"].endswith("/config/joint_map.yaml")
+    v2 = _plugin_params(_ros2_control(
+        "wojtek_pc", "urdf/wojtek_sim.urdf.xacro", hw="mujoco",
+        legs="legs_v627", joint_map_yaml="/tmp/joint_map_identity.yaml",
+    ))
+    assert v2["joint_map_yaml"] == "/tmp/joint_map_identity.yaml"
+
+
+def test_real_xacro_wears_either_legs_under_the_same_names(real):
+    """The real description takes legs:= too, for robot:=wojtek_v2. The
+    drives and the controllers bind the same joints either way."""
+    v627 = _ros2_control(
+        "wojtek_bringup", "urdf/wojtek_real.urdf.xacro", legs="legs_v627",
+    )
+    assert _joints(v627) == _joints(real)
+    assert _sensors(v627) == _sensors(real)
