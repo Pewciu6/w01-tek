@@ -1,9 +1,12 @@
 # Robot variants
 
 A robot variant is one set of legs on the Wojtek body. Every variant uses the
-same body, the same joint, sensor and actuator names, and the same 54-value
-actor observation. Link lengths, masses, the contact pad and the motor limits
-differ between variants.
+same body and the same joint, sensor and actuator names, so a policy's
+observation layout does not depend on the variant. Link lengths, masses, the
+contact pad and the motor limits differ between variants. What a policy
+observes is set by the experiment preset, and only the four-part list in
+`legs_v627_locomotion` (joint positions, joint velocities, last action,
+command) can be exported for the robot.
 
 | Variant | Legs | Standing height | Status |
 |---|---|---|---|
