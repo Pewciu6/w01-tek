@@ -205,6 +205,11 @@ its steadiness with a shuffle. Two weak points remain in all three policies.
 Yaw rate in the arc is about 0.2 rad/s short of the 0.6 rad/s command. The
 stop still rolls the body 5 degrees.
 
+`v2b` is published as the keeper `<HF_ORGANIZATION>/wojtek_v2-locomotion`:
+checkpoint, `run.json`, the battery and three videos. It carries no
+`policy.npz` pair. The policy observes the gait clock, which the ROS runtime
+does not implement, so `export` refuses it.
+
 `report`, `battery` and `eval` take their stance heights from the run's robot.
 The stock robot keeps 0.125 m with steps to 0.105 m and 0.155 m. Another
 variant uses the middle of its trained `command.height` range, and a quarter
