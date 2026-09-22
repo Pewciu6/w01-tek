@@ -25,7 +25,7 @@ from wojtek_policy.policy import (  # noqa: E402
     gravity_from_quat,
     height_anchor,
 )
-from wojtek_policy import policy_source  # noqa: E402
+from wojtek_policy import policy_source, robots  # noqa: E402
 from wojtek_policy.policy_source import (  # noqa: E402
     active_policy,
     default_policy,
@@ -593,14 +593,17 @@ def test_default_policy_needs_an_organization(monkeypatch):
     monkeypatch.delenv("HF_ORGANIZATION", raising=False)
     assert default_policy() == ""
     monkeypatch.setenv("HF_ORGANIZATION", "org")
-    assert default_policy() == "org/" + policy_source._DEFAULT_REPO
+    assert default_policy() == "org/" + robots.get("wojtek").default_policy
 
 
 def test_default_policy_is_pinned_to_a_commit():
     # The robot is offline and can only answer a commit that is already in
     # its store, so the shipped pin must be a commit.
-    _, _, revision = policy_source._DEFAULT_REPO.partition("@")
-    assert policy_source._is_commit(revision)
+    for profile in robots.PROFILES.values():
+        if profile.default_policy is None:
+            continue
+        _, _, revision = profile.default_policy.partition("@")
+        assert policy_source._is_commit(revision), profile.name
 
 
 def test_default_cli_resolves_from_the_store(tmp_path, monkeypatch):

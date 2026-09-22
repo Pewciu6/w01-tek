@@ -40,6 +40,8 @@ from pathlib import Path
 
 import numpy as np
 
+from wojtek_policy import robots
+
 SCHEMA_VERSION = 2
 
 # Obs components this interpreter can produce, mapped to the step() inputs.
@@ -88,7 +90,7 @@ def height_anchor(home_ctrl, height, ctrl_low, ctrl_high, table=None):
 
 
 class WojtekPolicy:
-    def __init__(self, npz_path, meta_path=None, clamp_knee=False):
+    def __init__(self, npz_path, meta_path=None, clamp_knee=False, robot=None):
         npz_path = Path(npz_path)
         meta_path = Path(meta_path) if meta_path else npz_path.with_name(
             "policy_meta.json"
@@ -103,6 +105,11 @@ class WojtekPolicy:
                 "or regenerate a keeper's meta with "
                 "training/wojtek_rl/migrate_keeper_meta.py"
             )
+        # robot is a profile name from robots.py. With it, a policy trained
+        # for other legs is refused before its weights are even read.
+        # Without it, nothing is checked, as before profiles existed.
+        if robot:
+            robots.check_policy(m, robot, where=f"policy at {meta_path}")
         data = np.load(npz_path)
         self._norm_mean = data["norm_mean"]
         self._norm_std = data["norm_std"]
