@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>wojtek_nav</name>
+  <version>0.1.0</version>
+  <description>
+    Navigation for wojtek, starting with what it stands on: a rolling local
+    costmap in the odom frame, built from the depth camera, with memory of
+    what the fixed 70-degree camera can no longer see.
+
+    Launch plus configuration only: it composes third-party nodes
+    (image_proc decimation, depth_image_proc deprojection, nav2_costmap_2d)
+    around this package's settings, the way wojtek_perception_bringup
+    composes the camera driver. The odometry it builds on is
+    wojtek_odometry's; the streams are the camera bringup's.
+  </description>
+  <maintainer email="kchmielewski707@gmail.com">Jakub Chmielewski</maintainer>
+  <license>Apache License 2.0</license>
+
+  <!-- The three nodes the launch runs, configured from config/. -->
+  <exec_depend>image_proc</exec_depend>
+  <exec_depend>depth_image_proc</exec_depend>
+  <exec_depend>nav2_costmap_2d</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

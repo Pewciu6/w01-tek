@@ -312,7 +312,7 @@ odometrię i przesuwa prawdę do `odom→base_link_gt` (parametr
 dziedziczy wtedy jej prawdziwy dryf, a prawda zostaje w TF dla mierników
 (`odom_vs_ground_truth`, `odom_trace`, parametr `ground_truth_frame`).
 
-## 9. Nawigacja — percepcja lokalna (w budowie)
+## 9. `wojtek_nav` — percepcja lokalna: costmapa (launch + config)
 
 Cel nie jest mapą świata, tylko **percepcją wokół robota**: co jest
 przeszkodą teraz i przez najbliższe metry. Stąd wszystko żyje w ramce
@@ -321,6 +321,16 @@ oknie przesuwnym — statyczna względem świata, przesuwająca się z robotem,
 z **pamięcią**: kamera 70° bez obrotu głowy jest ślepa na boki i do tyłu,
 więc komórka raz zajęta zostaje, dopóki nie wyjedzie z okna albo nie
 zostanie wyczyszczona ray-tracingiem z tego, co robot faktycznie widzi.
+
+Zbudowane (25.09.2026): `costmap.launch.py` = trzy gotowe węzły C++
+(`image_proc/crop_decimate` co 4. piksel → `depth_image_proc/point_cloud_xyz`
+→ `nav2_costmap_2d`, okno 6×6 m, komórka 5 cm, `autostart_node`, bez
+lifecycle managera). Dwa źródła obserwacji na jednej chmurze: `depth_mark`
+znaczy od 6 cm nad podłogą w górę, `depth_clear` czyści promieniami aż do
+podłogi — jedno źródło nie umie obu rzeczy naraz. Wysokości w `odom`, czyli
+wypoziomowane IMU przez odometrię. Sprawdzone w symie (`scene_nav.xml`):
+skrzynia 2 m przed robotem zostaje w costmapie po obrocie o 92°, który
+wyprowadza ją z pola widzenia; okno jedzie z robotem. Bringup: `nav:=true`.
 
 Strategię zostawia się VLM-owi: on daje **cel** (poza w `odom`), planner
 przelicza trasę na costmapie co ~1 s, kontroler zamienia ją na `/cmd_vel`

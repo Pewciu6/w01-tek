@@ -8,6 +8,7 @@ virtual camera, RViz, the operator console and optionally a gamepad.
                                        [boot_pose:=folded] [camera:=false]
                                        [console:=web|qt|none] [gamepad:=true]
                                        [telemetry:=true] [deck:=false]
+                                       [leg_odom:=true nav:=true]
 
 This is `robot.launch.py` with the hardware plugin swapped -- same
 controller_manager at 400 Hz, same broadcasters, same real_io_node, same
@@ -56,6 +57,10 @@ with the same parameters the robot runs, and moves the plant's ground truth
 to base_link_gt (still in TF, for the drift meters). Anything built on the
 robot's own pose -- the local costmap, a map -- then inherits the odometry's
 honest drift instead of reading the simulator's mind.
+
+A navigation session: model_xml:=scene_nav.xml leg_odom:=true nav:=true --
+the corridor scene, the legs' odometry, and wojtek_nav's rolling costmap on
+top (/wojtek/nav/costmap). See wojtek_nav/README.md.
 
 The world the camera draws is config/scene_sim.xml: the training scene plus
 a ball, a fire hydrant, a traffic light, a stop sign, a clock and a person

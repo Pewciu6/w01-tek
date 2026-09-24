@@ -580,6 +580,22 @@ def common_launch_description(
         DeclareLaunchArgument(
             "leg_odom", default_value="true" if hardware == "real" else "false",
         ),
+        # Local perception for navigation (wojtek_nav): the rolling costmap
+        # around the robot in odom, from the depth camera. Off by default,
+        # like the camera it needs (perception:=true on the robot, the
+        # virtual camera in the sim) and the odometry under it
+        # (leg_odom:=true in the sim).
+        DeclareLaunchArgument("nav", default_value="false"),
+        DeclareLaunchArgument(
+            "nav_cpus", default_value="0,1" if hardware == "real" else "",
+        ),
+        IncludeLaunchDescription(
+            PathJoinSubstitution(
+                [FindPackageShare("wojtek_nav"), "launch", "costmap.launch.py"]
+            ),
+            launch_arguments={"cpus": LaunchConfiguration("nav_cpus")}.items(),
+            condition=IfCondition(LaunchConfiguration("nav")),
+        ),
         # The deck panel (wojtek_deck): a browser cockpit for a handheld on
         # the robot's wifi. On in the simulation (open http://localhost:8090),
         # opt-in on the robot (deck:=true deck_cpus:=0,1 in the service).
