@@ -17,10 +17,17 @@
   <maintainer email="kchmielewski707@gmail.com">Jakub Chmielewski</maintainer>
   <license>Apache License 2.0</license>
 
-  <!-- The three nodes the launch runs, configured from config/. -->
+  <!-- The three perception nodes the launch runs, configured from config/. -->
   <exec_depend>image_proc</exec_depend>
   <exec_depend>depth_image_proc</exec_depend>
   <exec_depend>nav2_costmap_2d</exec_depend>
+  <!-- goto_node, the setpoint driver on top of the costmap. -->
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
 
   <test_depend>python3-pytest</test_depend>
 

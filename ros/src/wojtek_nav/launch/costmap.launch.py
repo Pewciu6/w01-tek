@@ -7,9 +7,15 @@
 Runs standalone (against a running camera + odometry) and is meant to be
 included by the robot/sim bringup (nav:=true), which passes the CPU pin.
 
-    depth image ──► crop_decimate ──► point_cloud_xyz ──► nav2_costmap_2d ──► /wojtek/nav/costmap
-    (424x240)       (every Nth pixel)  /wojtek/nav/points   (rolling, odom)     /wojtek/nav/voxel_grid
-    TF odom->base_link (leg_odometry), base_link->camera (URDF / driver) ──┘
+    depth image ──► crop_decimate ──► point_cloud_xyz ──► nav2_costmap_2d ──► /wojtek/nav/costmap ──┐
+    (424x240)       (every Nth pixel)  /wojtek/nav/points   (rolling, odom)     /wojtek/nav/voxel_grid │
+    TF odom->base_link (leg_odometry), base_link->camera (URDF / driver) ──┘                          ▼
+    /wojtek/nav/goal (PoseStamped, the VLM's next setpoint) ─────────────────────────────► goto_node ──► /cmd_vel
+                                                                                            /wojtek/nav/status
+
+goto_node (goto:=true, the default) is the costmap's consumer: it walks
+straight at the setpoint and stops when the line ahead is blocked -- the
+strategy is the VLM's, the veto is the robot's. See wojtek_nav/goto.py.
 
 Why three nodes and not one: each is a stock C++ node doing one thing, and
 the expensive one -- deprojecting depth into points -- is C++ for that
@@ -107,6 +113,16 @@ def _setup(context, *args, **kwargs):
             output="screen",
         ),
     ]
+    if arg("goto").lower() in ("true", "1"):
+        actions.append(
+            Node(
+                package=PKG,
+                executable="goto_node",
+                output="screen",
+                parameters=[{"goal_timeout": float(arg("goal_timeout"))}],
+                prefix=prefix,
+            )
+        )
     return actions
 
 
@@ -138,6 +154,16 @@ def generate_launch_description():
                             "deprojection; 1 = none. 4 turns 424x240 into "
                             "106x60, ~6k points -- the costmap ray-traces "
                             "each one.",
+            ),
+            DeclareLaunchArgument(
+                "goto", default_value="true",
+                description="Run goto_node, the setpoint driver on the "
+                            "costmap (wojtek/nav/goal -> cmd_vel).",
+            ),
+            DeclareLaunchArgument(
+                "goal_timeout", default_value="3.0",
+                description="Dead-man (s): a setpoint older than this "
+                            "stops the robot; the VLM must keep talking.",
             ),
             DeclareLaunchArgument(
                 "cpus", default_value="",

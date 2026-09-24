@@ -1,9 +1,11 @@
 # wojtek_nav
 
-Navigation for Wojtek, starting with what it stands on: **local perception**.
-A rolling costmap in the `odom` frame, built from the depth camera, that
-remembers what the fixed 70-degree camera can no longer see. Launch +
-config only; the nodes are stock image_pipeline and nav2.
+Navigation for Wojtek: **local perception** and the **setpoint driver** on
+top of it. A rolling costmap in the `odom` frame, built from the depth
+camera, that remembers what the fixed 70-degree camera can no longer see;
+and `goto_node`, which walks straight at the setpoint a VLM hands over and
+stops when the costmap says the line ahead is blocked. The perception is
+stock image_pipeline + nav2 composed by a launch; the driver is ours.
 
 ```bash
 ros2 launch wojtek_nav costmap.launch.py                                   # standalone, against a running camera + odometry
@@ -12,9 +14,11 @@ ros2 launch wojtek_bringup robot.launch.py perception:=true nav:=true      # the
 ```
 
 ```
-depth image ──► crop_decimate ──► point_cloud_xyz ──► nav2_costmap_2d ──► /wojtek/nav/costmap  (OccupancyGrid, odom)
-(424x240)       (every 4th px)    /wojtek/nav/points   (rolling 6x6 m)     /wojtek/nav/voxel_grid
-TF odom->base_link (leg_odometry), base_link->camera (URDF / driver) ──┘
+depth image ──► crop_decimate ──► point_cloud_xyz ──► nav2_costmap_2d ──► /wojtek/nav/costmap ──┐
+(424x240)       (every 4th px)    /wojtek/nav/points   (rolling 6x6 m)     /wojtek/nav/voxel_grid │
+TF odom->base_link (leg_odometry), base_link->camera (URDF / driver) ──┘                          ▼
+/wojtek/nav/goal (PoseStamped: the VLM's next setpoint) ─────────────────────────► goto_node ──► /cmd_vel
+                                                                                    /wojtek/nav/status
 ```
 
 | piece | where |
@@ -69,14 +73,47 @@ against a noiseless floor here), the extrinsics error, and the CPU cost on
 the RPi -- three C++ nodes at 15 fps and 6k points is a fraction of a core
 on the PC, unmeasured on the robot.
 
+## The setpoint driver (`goto_node`)
+
+The contract, decided 2026-09-25: the VLM does the strategy, the robot
+keeps the reflexes. A setpoint is a `geometry_msgs/PoseStamped` on
+`/wojtek/nav/goal`, ~1 m ahead, about once a second; the robot walks
+straight at it (turning in place first when it is far off the nose) and
+stops when it gets there. No local planner: which way round the crate is
+the VLM's call, from the picture. What the robot vetoes on its own is a
+collision: a few cells along the line ahead are probed in the costmap,
+and an inscribed/lethal one stops the robot with status `blocked` --
+including against the thing it walked past a moment ago and can no
+longer see. Turning towards the goal stays allowed while blocked; only a
+robot pointed at its goal with an obstacle ahead has nothing left to try.
+
+- **Frame and time.** Any frame TF resolves: a goal in `base_link` with
+  the *picture's* stamp is transformed to `odom` at that stamp, so the
+  point the VLM meant survives the seconds the robot walked on during
+  inference. A goal in `odom` is taken as is.
+- **Dead-man.** A setpoint expires `goal_timeout` (3 s) after arrival;
+  the VLM must keep talking. The stop is one zero `/cmd_vel` and then
+  silence, the same protocol as `text_commander`, so a pad or console can
+  take over without a shouting match.
+- **Status** on `/wojtek/nav/status` (latched): `idle` / `turning` /
+  `driving` / `blocked` / `reached` -- what a VLM loop reads before it
+  decides the next point.
+- **Non-holonomic on purpose.** The policy can strafe; the camera cannot.
+  A robot that walks sideways walks blind.
+
+Verified (sim, 2026-09-25): a setpoint straight through the crate stops
+the robot `blocked` 1 m short of it and `idle` after the dead-man; a
+setpoint past the crate on its free side is `reached` within 6 cm of the
+truth. The pure controller (`goto.py`) has its own desk tests.
+
 ## Next
 
-The consumer: a planner on this window replanned about once a second, a
-controller turning its path into `/cmd_vel` for `policy_node`, and a goal
-contract for the VLM (a pose in `odom`). Also: negative obstacles (a hole
-or a step down is *missing* floor, which this costmap reads as unknown,
-not as danger) and the step-height decision for a legged robot (the
-0.15 m box is a wall here; whether it should be is the policy's business).
+The VLM loop itself (picture in, setpoint out, on the DGX), and whether it
+should hand over metres or a pixel the robot projects through the depth.
+Then: negative obstacles (a hole or a step down is *missing* floor, which
+this costmap reads as unknown, not as danger) and the step-height decision
+for a legged robot (the 0.15 m box is a wall here; whether it should be is
+the policy's business).
 
 ## Tests
 
@@ -84,8 +121,10 @@ not as danger) and the step-height decision for a legged robot (the
 cd ros/src/wojtek_nav && PYTHONPATH=$PWD:$PYTHONPATH python3 -m pytest test/ -q
 ```
 
-Launch composition (three nodes in order, the decimated pair published
+Launch composition (the nodes in order, the decimated pair published
 where image_transport looks for it, the cloud landing on the topic both
-observation sources read, CPU pins) and the file's invariants (rolling
-window in odom, footprint covers the measured robot, marking/clearing
-split by floor height, ranges match the camera).
+observation sources read, CPU pins), the costmap file's invariants
+(rolling window in odom, footprint covers the measured robot,
+marking/clearing split by floor height, ranges match the camera), and
+the go-to controller on a desk (reaches, turns first, obeys the limits,
+blocks and resumes, dead-man, turns while blocked).

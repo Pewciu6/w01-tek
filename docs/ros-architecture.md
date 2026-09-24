@@ -332,11 +332,20 @@ wypoziomowane IMU przez odometrię. Sprawdzone w symie (`scene_nav.xml`):
 skrzynia 2 m przed robotem zostaje w costmapie po obrocie o 92°, który
 wyprowadza ją z pola widzenia; okno jedzie z robotem. Bringup: `nav:=true`.
 
-Strategię zostawia się VLM-owi: on daje **cel** (poza w `odom`), planner
-przelicza trasę na costmapie co ~1 s, kontroler zamienia ją na `/cmd_vel`
-dla `policy_node`. Przy takim horyzoncie dryf odometrii nóg (2–3 %
-dystansu) nie ma znaczenia: w oknie kilku metrów to centymetry, a każdy
-nowy przelicz koryguje cel świeżymi punktami.
+Strategię zostawia się VLM-owi: on daje **następny setpoint** (`PoseStamped`
+na `/wojtek/nav/goal`, ~1 m przed robotem, co ~1 s; w dowolnej ramce, którą
+TF przeliczy do `odom` **w chwili stempla obrazu**, więc punkt nie ucieka
+przez czas inferencji). `goto_node` idzie do niego po prostej — bez
+plannera: objazd to decyzja VLM-a z obrazu. Robotowi zostaje **weto**:
+komórki na linii przed nim sprawdzane w costmapie, lethal/inscribed = stop
+i status `blocked` (także o rzecz, którą minął i której już nie widzi);
+obrót w miejscu ku celowi zostaje dozwolony. Dead-man 3 s, jeden zerowy
+`/cmd_vel` na stop i cisza — protokół `text_commander`. Status
+`idle/turning/driving/blocked/reached` na `/wojtek/nav/status`.
+Sprawdzone w symie: cel przez skrzynię → stop 1 m przed nią; cel obok →
+dojście z dokładnością 6 cm. Przy takim horyzoncie dryf odometrii nóg
+(2–3 % dystansu) nie ma znaczenia: w oknie kilku metrów to centymetry, a
+każdy nowy setpoint koryguje kurs.
 
 SLAM RGB-D (RTAB-Map, `wojtek_slam`) był zbudowany i zmierzony w symie
 (pętla 13,5 m: odometria 0,091 m RMSE, SLAM 0,085 m, 38 poprawnych

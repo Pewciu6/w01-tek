@@ -20,5 +20,9 @@ setup(
     maintainer_email="kchmielewski707@gmail.com",
     description="Local perception for navigation: the rolling costmap around the robot.",
     license="Apache-2.0",
-    entry_points={"console_scripts": []},
+    entry_points={
+        "console_scripts": [
+            "goto_node = wojtek_nav.goto_node:main",
+        ],
+    },
 )

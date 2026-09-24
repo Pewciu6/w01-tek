@@ -41,6 +41,8 @@ def _context(**overrides):
         "depth_info_topic": "/camera/camera/depth/camera_info",
         "points_topic": "/wojtek/nav/points",
         "decimation": "4",
+        "goto": "true",
+        "goal_timeout": "3.0",
         "cpus": "",
         "launch-prefix": "",
     }
@@ -73,18 +75,29 @@ def _executables(nodes):
     return [str(n._Node__node_executable).rsplit("/", 1)[-1] for n in nodes]
 
 
-def test_setup_is_decimate_then_deproject_then_costmap(launch_mod):
+def test_setup_is_decimate_deproject_costmap_then_goto(launch_mod):
     nodes = launch_mod._setup(_context())
     assert all(isinstance(n, Node) for n in nodes)
     assert _executables(nodes) == [
-        "crop_decimate_node", "point_cloud_xyz_node", "nav2_costmap_2d",
+        "crop_decimate_node", "point_cloud_xyz_node", "nav2_costmap_2d", "goto_node",
     ]
+
+
+def test_goto_can_be_left_out(launch_mod):
+    nodes = launch_mod._setup(_context(goto="false"))
+    assert "goto_node" not in _executables(nodes)
+
+
+def test_goto_gets_the_dead_man(launch_mod):
+    ctx = _context(goal_timeout="2.5")
+    goto = launch_mod._setup(ctx)[-1]
+    assert _params(goto, ctx)[0]["goal_timeout"] == pytest.approx(2.5)
 
 
 def test_decimation_one_skips_the_decimator(launch_mod):
     ctx = _context(decimation="1")
     nodes = launch_mod._setup(ctx)
-    assert _executables(nodes) == ["point_cloud_xyz_node", "nav2_costmap_2d"]
+    assert _executables(nodes) == ["point_cloud_xyz_node", "nav2_costmap_2d", "goto_node"]
     # The deprojector then reads the camera directly.
     remaps = _remaps(nodes[0], ctx)
     assert remaps["image_rect"] == "/camera/camera/depth/image_rect_raw"
@@ -101,7 +114,7 @@ def test_decimated_pair_shares_a_directory(launch_mod):
     a pair published anywhere else is never joined and the deprojector
     waits forever (seen: '/wojtek/nav/depth' + '/wojtek/nav/camera_info')."""
     ctx = _context()
-    decim, cloud, _ = launch_mod._setup(ctx)
+    decim, cloud = launch_mod._setup(ctx)[:2]
     out = _remaps(decim, ctx)
     image, info = out["out/image_raw"], out["out/camera_info"]
     assert image.rsplit("/", 1)[0] == info.rsplit("/", 1)[0]
@@ -119,7 +132,7 @@ def test_decimator_takes_every_nth_pixel_without_interpolating(launch_mod):
 
 def test_cloud_lands_on_the_topic_the_costmap_reads(launch_mod):
     ctx = _context()
-    _, cloud, costmap = launch_mod._setup(ctx)
+    _, cloud, costmap = launch_mod._setup(ctx)[:3]
     points = _remaps(cloud, ctx)["points"]
     sources = _costmap_params()["voxel_layer"]
     for name in sources["observation_sources"].split():
@@ -127,7 +140,7 @@ def test_cloud_lands_on_the_topic_the_costmap_reads(launch_mod):
     assert str(_params(costmap, ctx)[0]).endswith("costmap.yaml")
 
 
-def test_cpus_argument_pins_all_three(launch_mod):
+def test_cpus_argument_pins_every_node(launch_mod):
     ctx = _context(cpus="0,1")
     for node in launch_mod._setup(ctx):
         assert perform_substitutions(ctx, _prefix(node)) == "taskset -c 0,1"
