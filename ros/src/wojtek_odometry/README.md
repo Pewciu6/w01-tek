@@ -38,7 +38,7 @@ Two ways to have the node up:
 - `ros2 launch wojtek_pc sim.launch.py leg_odom:=true` -- the bringup runs
   it with the robot's parameters, it owns `odom->base_link`, and the
   plant's ground truth moves to `odom->base_link_gt`. This is the
-  configuration the SLAM builds on (`slam:=true`). Point the drift meters
+  configuration everything downstream builds on. Point the drift meters
   at the truth: `--ros-args -p ground_truth_frame:=base_link_gt`.
 - `ros2 launch wojtek_pc sim.launch.py` and `ros2 run wojtek_odometry
   leg_odometry_node` by hand -- TF stays the ground truth, the node only

@@ -50,7 +50,7 @@ def resolve_scene(model_xml):
     """The MuJoCo scene file a simulation loads, from the model_xml argument.
 
     Empty picks wojtek_pc's furnished scene_sim.xml; a bare file name
-    (`model_xml:=scene_slam.xml`) is one of wojtek_pc's config/ scenes; a
+    (`model_xml:=scene_nav.xml`) is one of wojtek_pc's config/ scenes; a
     path is taken as given. One function for the two loaders of the scene
     (the plant inside ros2_control and the camera renderer), so they cannot
     resolve the same argument two ways and simulate different worlds.
@@ -579,40 +579,6 @@ def common_launch_description(
         # the odometry's drift in the picture (the SLAM sessions do).
         DeclareLaunchArgument(
             "leg_odom", default_value="true" if hardware == "real" else "false",
-        ),
-        # RGB-D SLAM (wojtek_slam, RTAB-Map): map->odom, the 3D cloud and
-        # the 2D grid, a database per session. Off by default, like the
-        # camera: it is not on the control path, and its packages need not
-        # be installed for the stack to come up. Needs the camera streams
-        # (perception:=true on the robot, the virtual camera in the sim)
-        # and the leg odometry under it (leg_odom:=true in the sim).
-        DeclareLaunchArgument("slam", default_value="false"),
-        DeclareLaunchArgument(
-            "slam_cpus", default_value="0,1" if hardware == "real" else "",
-        ),
-        IncludeLaunchDescription(
-            PathJoinSubstitution(
-                [FindPackageShare("wojtek_slam"), "launch", "slam.launch.py"]
-            ),
-            launch_arguments={
-                "cpus": LaunchConfiguration("slam_cpus"),
-                # Depth REGISTERED to colour: the driver's aligned product
-                # on the robot; in the sim one render camera draws both
-                # images, so the raw depth already is.
-                "depth_topic": (
-                    "/camera/camera/aligned_depth_to_color/image_raw"
-                    if hardware == "real"
-                    else "/camera/camera/depth/image_rect_raw"
-                ),
-                # The sim's true pose, recorded per map node so rtabmap's
-                # own report measures the map's error. Only meaningful
-                # when the truth is NOT what the map is built on.
-                "ground_truth_frame_id": PythonExpression([
-                    "'odom' if '", LaunchConfiguration("leg_odom"),
-                    "'.lower() in ('true', '1') else ''",
-                ]) if hardware == "sim" else "",
-            }.items(),
-            condition=IfCondition(LaunchConfiguration("slam")),
         ),
         # The deck panel (wojtek_deck): a browser cockpit for a handheld on
         # the robot's wifi. On in the simulation (open http://localhost:8090),

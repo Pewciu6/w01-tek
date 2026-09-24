@@ -8,7 +8,6 @@ nodes -- no RViz, no GUI. Run visualization/debug on the PC separately:
                                                [max_torque:=2.0] [dry_run:=true]
                                                [boot_pose:=home|folded] [bag:=true]
                                                [gamepad:=true] [perception:=true]
-                                               [slam:=true] [leg_odom:=false]
                                                [telemetry:=true] [foxglove:=true]
                                                [deck:=true deck_cpus:=0,1]
 

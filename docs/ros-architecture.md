@@ -312,42 +312,28 @@ odometrię i przesuwa prawdę do `odom→base_link_gt` (parametr
 dziedziczy wtedy jej prawdziwy dryf, a prawda zostaje w TF dla mierników
 (`odom_vs_ground_truth`, `odom_trace`, parametr `ground_truth_frame`).
 
-## 9. `wojtek_slam` — SLAM RGB-D (launch + config)
+## 9. Nawigacja — percepcja lokalna (w budowie)
 
-RTAB-Map nad strumieniami D435 i odometrią nóg. Komponuje dwa węzły
-third-party (`rtabmap_sync/rgbd_sync`, `rtabmap_slam/rtabmap`) wokół
-`config/rtabmap.yaml`, tak jak `wojtek_perception_bringup` komponuje
-driver kamery. Właściciel `map→odom`; produkty: `/rtabmap/cloud_map`
-(3D), `/rtabmap/map` (siatka 2D pod Nav2), baza `~/wojtek_maps/map_<stamp>.db`
-(cały graf z obrazami — źródło eksportu PLY/mesh i trybu lokalizacji).
+Cel nie jest mapą świata, tylko **percepcją wokół robota**: co jest
+przeszkodą teraz i przez najbliższe metry. Stąd wszystko żyje w ramce
+`odom` (ramka `map` niepotrzebna), a produktem jest **costmapa lokalna** w
+oknie przesuwnym — statyczna względem świata, przesuwająca się z robotem,
+z **pamięcią**: kamera 70° bez obrotu głowy jest ślepa na boki i do tyłu,
+więc komórka raz zajęta zostaje, dopóki nie wyjedzie z okna albo nie
+zostanie wyczyszczona ray-tracingiem z tego, co robot faktycznie widzi.
 
-Zasada działania, która ustawia całą resztę: **między domknięciami pętli
-poza jest w 100 % z odometrii**. RTAB-Map dokłada węzeł co 0,1 m / 6°,
-łączy go z poprzednim przyrostem odometrii, a korekta `map→odom` powstaje
-tylko, gdy cechy wizualne bieżącego węzła dopasują się do wcześniejszego
-(loop closure / proximity) i graf się zoptymalizuje. Cechy są z obrazu
-kolorowego, więc pętla domyka się tylko z podobnego kierunku patrzenia —
-stąd protokół teleop: obrót 360° w miejscu na starcie, na skrzyżowaniach
-i na końcu trasy. Odometria wchodzi przez **TF** (interpolacja do stempla
-obrazu), nie przez topic. `Reg/Force3DoF` = false: korpus kroczącego
-robota ma roll/pitch z IMU i mapa ma je uwzględniać.
+Strategię zostawia się VLM-owi: on daje **cel** (poza w `odom`), planner
+przelicza trasę na costmapie co ~1 s, kontroler zamienia ją na `/cmd_vel`
+dla `policy_node`. Przy takim horyzoncie dryf odometrii nóg (2–3 %
+dystansu) nie ma znaczenia: w oknie kilku metrów to centymetry, a każdy
+nowy przelicz koryguje cel świeżymi punktami.
 
-Wejście głębi musi być **zarejestrowane do koloru**: na robocie
-`aligned_depth_to_color` (70° FOV — jedyny konsument, dla którego ta
-strata jest właściwa), w symie surowa głębia (jedna kamera renderuje oba
-obrazy; kolor 848x480 = 2× głębia, bo RTAB-Map wymaga całkowitej
-krotności).
+SLAM RGB-D (RTAB-Map, `wojtek_slam`) był zbudowany i zmierzony w symie
+(pętla 13,5 m: odometria 0,091 m RMSE, SLAM 0,085 m, 38 poprawnych
+domknięć), ale zszedł ze ścieżki: bez pętli w trasie nie poprawia pozy, a
+kosztuje rdzeń na RPi 4. Rozwiązanie leży na gałęzi `jakuc/slam-archive`
+do odtworzenia, gdy wróci temat trwałej mapy.
 
-Zmierzone w symie (21.09.2026, `scene_slam.xml`, pętla 13,5 m): odometria
-RMSE 0,091 m, SLAM 0,085 m, 38 domknięć — wszystkie poprawne; na końcu
-pętli błąd 0,21 m (odom) → 0,07 m (SLAM). **Na szachownicy sceny
-treningowej: 2 domknięcia, oba błędne, mapa obrócona o 90°** — stąd
-osobna scena `wojtek_pc/config/scene_slam.xml` (pokój z niepowtarzalnymi
-teksturami). Na robocie jeszcze nie uruchomiony; plan: SLAM na PC ze
-strumieni robota, onboard po zmierzeniu budżetu rdzeni.
-
-Zastąpił `cloud_accumulate_node` z `wojtek_perception_bringup` (sklejanie
-chmury w `odom` bez domknięć i bez czyszczenia) — usunięty 2026-09.
 
 ---
 

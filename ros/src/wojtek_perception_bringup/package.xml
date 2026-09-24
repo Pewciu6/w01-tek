@@ -6,8 +6,8 @@
   <description>
     Perception pipeline bringup for wojtek: the RealSense D435 depth and
     colour streams with their measured post-processing settings, and the
-    camera-to-body extrinsics. What is built on those streams (the map) lives
-    in wojtek_slam.
+    camera-to-body extrinsics. What is built on those streams (the local
+    costmap, obstacle perception) lives in the navigation packages.
 
     Composes third-party packages (the realsense2_camera driver, tf2_ros)
     around this package's measured configuration, which is why it is a

@@ -79,7 +79,7 @@
     # image as geometry nor the RGBD message (realsense2_camera_msgs/RGBD has
     # no RViz plugin at all).
     #
-    # Depth consumers (the SLAM, wojtek_slam) keep reading the depth
+    # Depth consumers (the navigation perception) keep reading the depth
     # IMAGE, because consuming a 400k-point cloud that was serialised first
     # is the expensive way round. This is a second, parallel product for a
     # human looking at the robot. It is built from the POST-decimation depth (424x240), so

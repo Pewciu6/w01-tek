@@ -15,8 +15,9 @@ The only singleton in here is the camera->body static transform, which is
 why it is opt-out (`extrinsics:=false`) for the case where the robot bringup
 already owns that TF edge.
 
-This launch owns the SENSOR only. What is built on the streams -- the map,
-the SLAM -- is wojtek_slam's, included next to this one by the robot bringup.
+This launch owns the SENSOR only. What is built on the streams -- the
+obstacle perception, the costmap -- belongs to the navigation packages,
+included next to this one by the robot bringup.
 (Two earlier in-package consumers are gone: the depth->grid reduction for the
 SCAN-planner, 2026-08, and the odom-frame accumulated cloud, 2026-09, both
 superseded by the SLAM's own map.)

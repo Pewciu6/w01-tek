@@ -36,10 +36,6 @@
        PC in the loop) and owns the odom->base_link TF there. Same
        exec_depend trick as above to reach the RPi build. -->
   <exec_depend>wojtek_odometry</exec_depend>
-  <!-- RGB-D SLAM over the camera and the odometry (slam:=true); same
-       exec_depend trick. Its own rtabmap dependencies are apt packages the
-       RPi provisioning installs, so the stack comes up without them. -->
-  <exec_depend>wojtek_slam</exec_depend>
   <!-- Hardware plugins and the sensor broadcaster: pluginlib loads them at
        runtime from the name in the URDF, and this package is ament_python, so
        it compiles nothing against them. Exec, not build: a build dependency

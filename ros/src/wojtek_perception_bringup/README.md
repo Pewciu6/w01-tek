@@ -2,7 +2,7 @@
 
 Prototype. Brings up the RealSense D435 depth stream and its
 post-processing settings (plus colour/RGBD for the VLM). The sensor only:
-what is built on the streams -- the map -- is `wojtek_slam`.
+what is built on the streams is the navigation stack's.
 
 ```bash
 ros2 launch wojtek_perception_bringup perception.launch.py
@@ -74,7 +74,6 @@ and the last one wins.
 |---|---|
 | camera settings | measured on hardware, see `config/d435.yaml` |
 | camera -> body extrinsics | **placeholder numbers**, must be measured |
-| map built on the streams | `wojtek_slam` (RTAB-Map), not this package |
 | odom-frame accumulated cloud | REMOVED 2026-09 (superseded by the SLAM's map) |
 | depth -> 8x8 grid reduction | REMOVED 2026-08 (fed only the dropped SCAN-planner path) |
 
