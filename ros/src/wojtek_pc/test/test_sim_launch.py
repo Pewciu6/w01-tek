@@ -59,6 +59,10 @@ def _context(hardware, **overrides):
         "telemetry": "false", "sysinfo_cpus": "",
         "foxglove": "false", "foxglove_cpus": "",
         "deck": "false", "deck_port": "8090", "deck_cpus": "",
+        "deck_camera": "false", "deck_camera_profile": "640x480x30",
+        "deck_stream_hz": "30.0",
+        # Core pinning, empty = no taskset (the sim's default).
+        "control_cpus": "", "policy_cpus": "", "ui_cpus": "",
     }
     if hardware == "real":
         defaults.update({
