@@ -2,7 +2,8 @@
 
 Navigation for Wojtek: **local perception** and the **setpoint driver** on
 top of it. A rolling costmap in the `odom` frame, built from the depth
-camera, that remembers what the fixed 70-degree camera can no longer see;
+camera, that remembers what the fixed ~90-degree camera (the raw depth's
+field of view; colour-aligned depth sees 70) can no longer see;
 and `goto_node`, which walks straight at the setpoint a VLM hands over and
 stops when the costmap says the line ahead is blocked. The perception is
 stock image_pipeline + nav2 composed by a launch; the driver is ours.
@@ -106,11 +107,64 @@ the robot `blocked` 1 m short of it and `idle` after the dead-man; a
 setpoint past the crate on its free side is `reached` within 6 cm of the
 truth. The pure controller (`goto.py`) has its own desk tests.
 
+## The pixel resolver (`pixel_goal_node`)
+
+Decided 2026-09-25: the VLM hands over a **pixel**, not metres. It sees a
+JPEG and answers with where on it to walk; everything metric happens on
+the robot, from the depth image taken with that picture. The node is the
+one piece between a VLM client and `goto`:
+
+```
+colour pixel (u, v) + picture stamp ──► depth pixel on the same viewing ray
+   ──► patch median of the depth image nearest that stamp ──► pinhole point in
+   camera_depth_optical_frame ──► odom at the picture's stamp (leg odometry)
+   ──► standoff 0.7 m in front of the object, facing it ──► /wojtek/nav/goal
+```
+
+- **Input** `/wojtek/nav/pixel_goal` (`geometry_msgs/PointStamped`):
+  `header.stamp` is the colour picture's stamp, `point.x`/`point.y` the
+  pixel normalised to the colour image (a VLM adapter divides Qwen's
+  0-1000 by 1000; a value above 1 is taken as an absolute pixel),
+  `point.z` a standoff in metres (0 = the `standoff_m` parameter). No new
+  message package: the contract is documented, not typed, until it grows
+  a second field.
+- **Depth, not the colour image.** The node keeps the raw depth stream in
+  a ring keyed by stamp and picks the frame nearest the picture's (within
+  `max_skew_s`, 0.1 s). It needs the colour *intrinsics* to map the pixel
+  through the viewing ray, never the colour bytes.
+- **Resolved once, re-sent in odom.** goto expires a setpoint 3 s after
+  it arrived, and its TF buffer keeps 10 s: a camera-frame goal re-sent for
+  longer than that is dropped (seen in the sim: the robot stopped 0.4 m
+  short). So the object point is transformed once, at the picture's
+  stamp, and the standoff setpoint goes out in `odom` every `repeat_s`
+  until goto says `reached`, has said `blocked` for `blocked_hold_s`
+  (goto turns while blocked and may go on; a moment of it is not a
+  failure), or `max_goal_s` passed.
+- **Status** on `/wojtek/nav/pixel_status` (latched): `resolving` /
+  `no_frame` / `no_depth` / `no_tf` / `sent` / `reached` / `blocked` /
+  `timeout` / `replaced`; the object point on `/wojtek/nav/pixel_target`
+  (odom) for the map view and the eval. A new pixel replaces the goal in
+  flight.
+
+Verified (sim, 2026-09-25, `scene_nav.xml`, the crate's near face
+projected into the colour image as the "VLM's" pixel): the resolved point
+is within 2 mm of the truth in the robot's own frame, three runs, and the
+robot stops 0.85 m from the crate (standoff plus goto's tolerance). In
+`odom` the same point is off by the odometry's drift at that moment
+(0.3-0.4 m late in a session of turns): the robot and the goal share that
+frame, so the approach does not care; a persistent map would.
+
+What the picture cannot fix: a point the VLM puts on the object (not the
+floor) is what the standoff is for; a target closer than ~0.8 m falls out
+of the 15-degree-down camera's view, so ask for `done`/`turn` there, not a
+pixel; a setpoint whose straight line clips an obstacle is goto's known
+limit -- the VLM must hand over the way round as the next pixel.
+
 ## Next
 
-The VLM loop itself (picture in, setpoint out, on the DGX), and whether it
-should hand over metres or a pixel the robot projects through the depth.
-Then: negative obstacles (a hole or a step down is *missing* floor, which
+The VLM client itself (picture in, pixel out, on the DGX) publishing
+`/wojtek/nav/pixel_goal`, with the 0-1000 adapter and a `done`/`turn`
+escape. Then: negative obstacles (a hole or a step down is *missing* floor, which
 this costmap reads as unknown, not as danger) and the step-height decision
 for a legged robot (the 0.15 m box is a wall here; whether it should be is
 the policy's business).

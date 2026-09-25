@@ -2,7 +2,7 @@
   The world a navigation session drives through: a corridor with branches.
 
   What this scene is for is perception, not scenery. The robot's camera
-  looks 70 degrees forward from a fixed head, so the two things worth
+  looks ~90 degrees forward from a fixed head, so the two things worth
   testing are (a) does an obstacle stay in the costmap after it leaves the
   view, and (b) can the robot get past one. A corridor with side branches
   exercises both: every branch mouth is seen once, from one direction, and

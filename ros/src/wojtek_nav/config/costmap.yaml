@@ -6,8 +6,9 @@
 #
 # What this map is FOR sets every number in it. Not a map of the world: a
 # rolling window around the robot, in odom, that says "obstacle / free /
-# never seen" for the next few metres. The camera is a 70-degree cone on a
-# fixed head, blind to the sides and behind, so the one thing the window
+# never seen" for the next few metres. The camera is a ~90-degree cone (the
+# raw depth's field of view; colour-aligned depth would be 70) on a fixed
+# head, blind to the sides and behind, so the one thing the window
 # must do is REMEMBER: a cell marked while the crate was in view stays
 # marked after the body turned away from it, until the robot either sees
 # through that cell again (ray tracing clears it) or drives far enough
