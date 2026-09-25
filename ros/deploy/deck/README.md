@@ -99,10 +99,10 @@ setsid nohup taskset -c 0,1 ros2 run realsense2_camera realsense2_camera_node \
   > ~/cam.log 2>&1 < /dev/null &
 
 PYTHONPATH=$HOME/py_deps:$PYTHONPATH \
-CYCLONEDDS_URI="file:///etc/cyclonedds-rpi.xml,<CycloneDDS><Domain><Internal><SocketReceiveBufferSize min=\"8MB\"/></Internal></Domain></CycloneDDS>" \
+CYCLONEDDS_URI="file:///etc/cyclonedds-rpi.xml,<CycloneDDS><Domain><Internal><SocketReceiveBufferSize max=\"8MB\"/></Internal></Domain></CycloneDDS>" \
 setsid nohup taskset -c 0,1 \
   ros2 run wojtek_deck deck_gateway \
-  --ros-args -p port:=8090 -p assets_dir:=/home/rpi/deck_assets \
+  --ros-args -p port:=8090 \
   -p policy:=/home/rpi/policy \
   > ~/gateway.log 2>&1 < /dev/null &
 ```
@@ -152,7 +152,7 @@ The robot needs this only the first time, or after it is reflashed. Check
 whether it is already there:
 
 ```bash
-ssh rpi@10.42.0.2 'ls -d ~/wojtek_ws/install/wojtek_deck ~/py_deps ~/deck_assets'
+ssh rpi@10.42.0.2 'ls -d ~/wojtek_ws/install/wojtek_deck ~/py_deps ~/wojtek_ws/deck_assets'
 ```
 
 `./ros/deploy.sh` does not carry the package. It builds
@@ -259,7 +259,14 @@ power cycle: switch the motors off and on under a running controller and
 the drives come back idle, keep answering, and nothing re-enables them,
 so the legs go soft with everything reporting fine. Lie, then hold
 `restart`, then wait for `LINK` to settle and the stack to come back, about
-30 s. The panel itself stays up: the gateway is not part of that service.
+30 s. On the robot the gateway is a node of that same launch, so the
+restart takes it down with the stack: `LINK` drops and the camera image
+freezes. The page reconnects on its own (it retries every second, and
+closes a socket that has gone silent for 6 s) once the service is back,
+and points the camera stream at the gateway afresh. The log line
+`restart_stack: restart requested ...` is the last thing the gateway sends
+before it goes; a later `restart_stack refused` means `sudo`/`systemctl`
+turned the request down before anything stopped.
 
 The robot's own Xbox pad can stay plugged in. Its teleop publishes only
 while its sticks are deflected and goes quiet two seconds after they

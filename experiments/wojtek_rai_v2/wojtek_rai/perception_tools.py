@@ -3,7 +3,9 @@
 `find_objects`: detect named objects in the current camera image, report
 bearing and distance (from the depth image) and their position in the map.
 `go_to_object`: the same detection, then a Nav2 goal 0.6 m in front of the
-best match, facing it. Needs the wojtek_perception container (`/detection`,
+best match, facing it, sent through `nav_tools._TimedNavMixin` so it gets the
+same workspace box, permission check, deadline and cancel handle as
+navigate_to_pose. Needs the wojtek_perception container (`/detection`,
 rai_interfaces/srv/RAIGroundingDino) and, for go_to_object, wojtek_nav.
 """
 
@@ -24,6 +26,7 @@ from rclpy.task import Future
 from sensor_msgs.msg import CompressedImage, Image
 
 from wojtek_rai import limits
+from wojtek_rai.nav_tools import _TimedNavMixin
 
 DETECTION_TIMEOUT_S = 40.0   # a cold GroundingDINO load on the 4 GB laptop GPU exceeds 15 s
 IMAGE_TIMEOUT_S = 5.0
@@ -325,7 +328,7 @@ class GoToObjectInput(BaseModel):
     object_name: str = Field(..., description="What to walk to, e.g. 'ball' or 'fire hydrant'.")
 
 
-class GoToObjectTool(_DetectMixin, NavigateToPoseBlockingTool):
+class GoToObjectTool(_DetectMixin, _TimedNavMixin, NavigateToPoseBlockingTool):
     name: str = "go_to_object"
     description: str = (
         "Detect the named object in the current camera view and navigate to a spot "
@@ -352,7 +355,9 @@ class GoToObjectTool(_DetectMixin, NavigateToPoseBlockingTool):
         yaw = math.atan2(oy - ry, ox - rx)
         back = min(limits.OBJECT_STANDOFF_M, d)
         gx, gy = ox - back * math.cos(yaw), oy - back * math.sin(yaw)
-        result = super()._run(x=gx, y=gy, z=0.0, yaw=yaw)
+        # _TimedNavMixin, not RAI's unbounded send_goal: the goal is refused
+        # outside the workspace, bounded by NAV_GOAL_TIMEOUT_S and cancellable.
+        result = self._navigate(gx, gy, yaw)
         return f"{_describe(best)}. Goal ({gx:.2f}, {gy:.2f}): {result}"
 
 
@@ -361,8 +366,9 @@ def build_perception_tools(connector: ROS2Connector, perms: dict, navigation: bo
     (navigation=False on a target without odometry)."""
     tools: List[Any] = [FindObjectsTool(connector=connector, **perms)]
     if navigation:
-        bounds = {"workspace_bounds_min": limits.WORKSPACE_MIN, "workspace_bounds_max": limits.WORKSPACE_MAX}
+        # No workspace_bounds_* kwargs: rai-core 2.12 silently drops them; the
+        # box is enforced in _TimedNavMixin._navigate (see nav_tools.py).
         tools.append(GoToObjectTool(
-            connector=connector, frame_id=limits.MAP_FRAME, action_name=limits.NAV_ACTION, **bounds, **perms
+            connector=connector, frame_id=limits.MAP_FRAME, action_name=limits.NAV_ACTION, **perms
         ))
     return tools

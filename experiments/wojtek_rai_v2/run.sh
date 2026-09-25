@@ -82,7 +82,9 @@ cexec() {
 case "${1:-}" in
   build)
     shift
-    compose build "$@"
+    # Only the agent image, as the usage text says: nav and perception have
+    # their own `build` subcommands (perception alone is ~8 GB).
+    compose build wojtek_rai "$@"
     ;;
   up)
     up

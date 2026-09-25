@@ -52,7 +52,7 @@ def test_no_secret_shaped_values(path):
 
 
 def test_nothing_outside_the_experiment_references_it():
-    scan_roots = [REPO_ROOT / "ros", REPO_ROOT / "training"]
+    scan_roots = [REPO_ROOT / "ros", REPO_ROOT / "training", REPO_ROOT / "docs"]
     if not all(r.is_dir() for r in scan_roots):
         pytest.skip("repository not visible from here (container run)")
     candidates = list(REPO_ROOT.glob("*.sh")) + list(REPO_ROOT.glob("*.md"))

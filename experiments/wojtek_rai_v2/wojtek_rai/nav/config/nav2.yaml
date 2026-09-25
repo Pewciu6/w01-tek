@@ -48,7 +48,7 @@ controller_server:
       yaw_goal_tolerance: 0.35
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
-      # 0.3 m/s is the real-robot cap (docs/plans/rai-nav2-on-wojtek.md, N4);
+      # 0.3 m/s is the real-robot cap (experiments/wojtek_rai_v2/docs/rai-nav2-on-wojtek.md, N4);
       # the same file serves sim and hardware, so it is the cap here too.
       desired_linear_vel: 0.3
       lookahead_dist: 0.6

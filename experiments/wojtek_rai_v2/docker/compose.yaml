@@ -40,6 +40,12 @@ services:
     build:
       context: ..
       dockerfile: docker/perception.Dockerfile
+      # The perception Dockerfile starts FROM the agent image. Declaring it
+      # as a service context is what makes Compose build wojtek_rai first
+      # (depends_on does not order builds), so `perception build` works on
+      # a fresh machine.
+      additional_contexts:
+        wojtek_rai: service:wojtek_rai
     image: wojtek_perception:jazzy
     container_name: wojtek_perception
     network_mode: host

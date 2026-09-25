@@ -1,14 +1,17 @@
 # Experiment: RAI (RobotecAI) on the simulated Wojtek, v2
 
-> **Status: EXPERIMENTAL. Not production, not on the robot.**
+> **Status: EXPERIMENTAL. Not production; nothing here is deployed to the robot.**
 > Nothing here is deployed by `ros/deploy.sh`, and no package here is a
-> dependency of `wojtek_bringup`. Interfaces are unstable by definition.
+> dependency of `wojtek_bringup`. It runs on the laptop; pointing it at the
+> physical robot is a separate, human-authorized session (see
+> [Physical robot](#physical-robot-human-authorized)). Interfaces are
+> unstable by definition.
 
 A typed instruction ("stand up, walk forward for three seconds, tell me what
 you see") drives the MuJoCo-simulated Wojtek through
 [RAI](https://github.com/RobotecAI/rai): a LangGraph ReAct agent with a small
 set of robot tools, talking to the simulation's existing ROS 2 graph. Plan and
-rationale: [docs/plans/rai-on-wojtek.md](../../docs/plans/rai-on-wojtek.md).
+rationale: [docs/rai-on-wojtek.md](docs/rai-on-wojtek.md).
 
 ## How it is wired
 
@@ -33,8 +36,10 @@ rationale: [docs/plans/rai-on-wojtek.md](../../docs/plans/rai-on-wojtek.md).
   `/cmd_vel` with a 2 s dead-man. `/wojtek/arm`, `enable`, `zero`, `reset`,
   `joint_targets` and `/cmd_vel` are on RAI's `forbidden` list
   (`wojtek_rai/limits.py`).
-- Tools: `walk`, `stop`, `stand_up`, `lie_down`, `get_robot_position`
-  (TF `odom -> base_link`), `get_camera_image`, `wait_for_seconds`.
+- Tools: `walk`, `turn` (closed-loop on odometry yaw, so only where
+  odometry exists), `stop`, `stand_up`, `lie_down`, `get_robot_position`
+  (TF `odom -> base_link`), `get_camera_image`, `wait_for_seconds`. The
+  Nav2 and perception sections below add theirs.
 - The robot's identity is a hand-written `wojtek_rai/embodiment.json`
   (RAI `EmbodimentInfo`); the `build-whoami` doc pipeline is not used yet.
 - LLM vendor is `config.toml`: Ollama over the tunnel by default; `[vendor]`
@@ -68,11 +73,12 @@ limit, loosen it for the session:
 
 A third container, `wojtek_nav`, runs Nav2 + slam_toolbox fed by the depth
 camera, and the agent gets RAI's Nav2 tools on top (`navigate_to_pose`,
-`go_to_place`, `get_map_pose`, `get_map_image`). Plan and rationale:
-[docs/plans/rai-nav2-on-wojtek.md](../../docs/plans/rai-nav2-on-wojtek.md).
+`cancel_navigation`, `go_to_place`, `get_map_pose`, `get_map_image`). Plan
+and rationale: [docs/rai-nav2-on-wojtek.md](docs/rai-nav2-on-wojtek.md).
 
 ```
-depth (best-effort) ─► depth_relay ─► depthimage_to_laserscan ─► /scan ─► slam_toolbox ─► /map, map→odom
+depth (best-effort) ─► depth_relay ─► point_cloud_xyz_node ─► /nav/points
+     ─► pointcloud_to_laserscan (height slice in base_link) ─► /scan ─► slam_toolbox ─► /map, map→odom
 TF odom→base_link + /odom_vel (sim) ─► odom_relay ─► /odom
 Nav2: planner (NavFn) · controller (Regulated Pure Pursuit) · behaviors · bt_navigator · velocity_smoother
       ─► /cmd_vel_nav ─► cmd_vel_watchdog (0.5 s dead-man) ─► /cmd_vel ─► policy_node
@@ -88,8 +94,13 @@ Named places for the sim scene live in `wojtek_rai/nav/config/places_sim.yaml`
 (prop positions from `scene_sim.xml`, pulled back 0.6 m). Lessons that shaped
 the parameters (`wojtek_rai/nav/config/nav2.yaml`):
 
-- the camera publishes best-effort, `depthimage_to_laserscan` wants reliable:
-  hence `depth_relay`;
+- the camera publishes best-effort, the `depth_image_proc` point-cloud node
+  subscribes reliable: hence `depth_relay`;
+- the camera is pitched 15° down, so a row-based `depthimage_to_laserscan`
+  read the floor as a wall 0.8 m ahead; the scan is a height slice of the
+  point cloud in `base_link` instead (`wojtek_rai/nav/config/cloud_to_scan.yaml`).
+  The slice is only as good as `base_link -> camera_link`: on the real robot
+  measure the mount and fill `extrinsics.yaml` first;
 - slam_toolbox is a lifecycle node in Jazzy: it needs its own lifecycle manager;
 - the SLAM map starts tiny, so the global costmap is a 12 m rolling window
   (otherwise ComputePathToPose fails with 203, start outside map);
@@ -123,11 +134,42 @@ Agent tools (`wojtek_rai/perception_tools.py`):
 ./experiments/wojtek_rai_v2/run.sh chat "find the ball and walk to it"
 ```
 
+## Physical robot (human-authorized)
+
+Nothing here reaches the robot through `ros/deploy.sh`: the agent stays in
+its container on the laptop and talks to the robot's ROS 2 graph over the
+WiFi AP, exactly as it talks to the sim. Launching, arming and disarming the
+robot remain human actions outside this experiment. A real-robot session
+sets these switches in the root `.env`; `run.sh` forwards every
+`WOJTEK_RAI_*` name into the `wojtek_rai` container (`agent`, `chat`,
+`shell`, `topics`, `test`; `nav launch` gets none of them):
+
+| switch | effect as implemented |
+|---|---|
+| `WOJTEK_RAI_READONLY=1` | first-contact mode: no `walk`, `turn`, `stop`, `stand_up`, `lie_down`, no Nav2 or perception tools; the agent can look, read its position and wait, and its prompt says so (`agent.py`, `tools.py`) |
+| `WOJTEK_RAI_ODOMETRY=0` | the robot's `odom -> base_link` is a static identity, so `turn` and every Nav2 tool (`navigate_to_pose`, `go_to_place`, `go_to_object`, map tools) are dropped and `get_robot_position` describes itself as static; `find_objects` stays, bearing and distance need no map (`tools.py`) |
+| `WOJTEK_RAI_COLOR_TRANSPORT=compressed` | every colour reader (camera tool, sidebar feed, `find_objects`) subscribes to `.../image_raw/compressed`: raw 640x480 rgb8 starved to 4 frames in 10 s over WiFi, the driver's JPEG arrives at full rate (`limits.py`) |
+| `WOJTEK_RAI_PLACES=none` | no place registry, so `go_to_place` is not offered (`nav_tools.py`) |
+| `WOJTEK_RAI_WORKSPACE_M=3` | goal box of ±3 m in `map` (one room) instead of the ±8 m sim arena; goals outside it are refused before Nav2 sees them (`limits.py`) |
+
+Two things the real bringup does not provide:
+
+- `text_commander`: the sim launch starts it, `wojtek_bringup` does not, so
+  `walk`/`stop` have no consumer until `ros2 run wojtek_teleop
+  text_commander` runs on the PC. The tools refuse to publish while nobody
+  subscribes (an error, never a silent no-op), and over the AP that
+  subscription shows up ~2 s after the publisher is created, hence
+  `SUBSCRIBER_WAIT_S` = 5 s in `limits.py`.
+- odometry: `run.sh nav launch target:=real` exists (no odom relay, no static
+  `map -> odom`, slam_toolbox with scan matching on) but needs an external
+  odometry node (plan phase N4) and gates Nav2 on a preflight that shuts the
+  launch down without one. Nav2 therefore remains sim-validated only.
+
 ## Layout
 
 | path | purpose |
 |---|---|
-| `run.sh` | `build \| up \| down \| shell \| topics \| agent \| chat \| tunnel \| inference \| pull \| test \| nav ...` |
+| `run.sh` | `build \| up \| down \| shell \| topics \| agent \| chat \| bench \| tunnel \| inference \| pull \| test \| nav ... \| perception ...` |
 | `docker/` | the `wojtek_rai` image and compose service (host net, same DDS settings as `wojtek_robot`) |
 | `ros/rai_interfaces.repos` | SHA pin of `rai_interfaces`, colcon-built in the image |
 | `config.toml` | RAI vendor/model names; no credentials |
@@ -150,7 +192,7 @@ Agent tools (`wojtek_rai/perception_tools.py`):
    under `ros/src/`, so `ros/deploy.sh` cannot ship them.
 4. Secrets and private host identities enter only through the gitignored
    root `.env` (`OPENAI_API_KEY`, `WOJTEK_RAI_INFERENCE_SSH`, ...), forwarded
-   by name.
+   by name; the `WOJTEK_RAI_*` session switches above travel the same way.
 
 ## Known gaps
 

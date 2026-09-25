@@ -178,7 +178,7 @@ def test_grab_waits_for_a_frame_newer_than_after(clock):
 
 def test_go_to_object_reports_a_stale_camera_without_sending_a_goal(clock, monkeypatch):
     goals = []
-    monkeypatch.setattr(pt.NavigateToPoseBlockingTool, "_run", lambda self, **kw: goals.append(kw) or "sent")
+    monkeypatch.setattr(pt.GoToObjectTool, "_navigate", lambda self, x, y, yaw: goals.append((x, y, yaw)) or "sent")
     connector = make_connector(clock, colour_age=3.0)
     _service(connector, [_detection("ball", 320, 180, 40, 40)])
 

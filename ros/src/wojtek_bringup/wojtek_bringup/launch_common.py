@@ -288,10 +288,15 @@ def _launch_setup(context, with_rviz, hardware):
     # frame: under load the gateway then sees no frames at all. So it gets
     # its own, bigger receive buffer, appended to whatever Cyclone config
     # the process already has (the robot's pins its interfaces there).
+    # `max` asks for 8 MB and keeps what the kernel grants; `min` would
+    # make it a requirement, and Cyclone refuses to start when the kernel
+    # cannot meet one. The robot's install.sh raises rmem_max so it gets
+    # the full 8 MB; the sim and an unprovisioned box get the kernel's cap
+    # and a log line instead of a gateway that never comes up.
     cyclone_base = os.environ.get("CYCLONEDDS_URI", "")
     cyclone_uri = (cyclone_base + "," if cyclone_base else "") + (
         "<CycloneDDS><Domain><Internal>"
-        '<SocketReceiveBufferSize min="8MB"/>'
+        '<SocketReceiveBufferSize max="8MB"/>'
         "</Internal></Domain></CycloneDDS>"
     )
     nodes.append(

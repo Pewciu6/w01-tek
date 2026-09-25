@@ -15,6 +15,7 @@ import pytest
 
 rai = pytest.importorskip("rai")
 
+from test_nav_timeout import _ActionClient, _Future, _GoalHandle  # noqa: E402
 from test_perception_tools import (  # noqa: E402
     PITCH,
     FakeClock,
@@ -26,6 +27,7 @@ from test_perception_tools import (  # noqa: E402
 )
 
 from wojtek_rai import limits  # noqa: E402
+from wojtek_rai import nav_tools  # noqa: E402
 from wojtek_rai import perception_tools as pt  # noqa: E402
 from wojtek_rai.perception_tools import (  # noqa: E402
     FindObjectsTool,
@@ -215,9 +217,15 @@ def _robot_at_origin(connector):
     connector.get_transform.side_effect = get_transform
 
 
+def _capture(goals):
+    """Stub for `_TimedNavMixin._navigate` (the goal path of go_to_object)
+    that records the (x, y, yaw) it was asked for instead of sending it."""
+    return lambda self, x, y, yaw: goals.append({"x": x, "y": y, "yaw": yaw}) or "sent"
+
+
 def test_go_to_object_stops_the_standoff_short_of_the_object_facing_it(clock, monkeypatch):
     goals = []
-    monkeypatch.setattr(pt.NavigateToPoseBlockingTool, "_run", lambda self, **kw: goals.append(kw) or "sent")
+    monkeypatch.setattr(pt.GoToObjectTool, "_navigate", _capture(goals))
     connector = make_connector(clock)
     _robot_at_origin(connector)
     _service(connector, [_detection("ball", CX_C, CY_C, 40, 40)])
@@ -229,13 +237,12 @@ def test_go_to_object_stops_the_standoff_short_of_the_object_facing_it(clock, mo
     assert goal["x"] == pytest.approx(object_x - limits.OBJECT_STANDOFF_M, abs=1e-6)
     assert goal["y"] == pytest.approx(0.0, abs=1e-6)
     assert goal["yaw"] == pytest.approx(0.0, abs=1e-6)
-    assert goal["z"] == 0.0
     assert out.endswith("sent")
 
 
 def test_go_to_object_never_backs_past_the_robot_when_the_object_is_close(clock, monkeypatch):
     goals = []
-    monkeypatch.setattr(pt.NavigateToPoseBlockingTool, "_run", lambda self, **kw: goals.append(kw) or "sent")
+    monkeypatch.setattr(pt.GoToObjectTool, "_navigate", _capture(goals))
     # 0.25 m ahead of the camera: the object is inside the 0.6 m standoff.
     connector = make_connector(clock, depth_arr=np.full((240, 424), 0.25))
     _robot_at_origin(connector)
@@ -249,7 +256,7 @@ def test_go_to_object_never_backs_past_the_robot_when_the_object_is_close(clock,
 
 def test_go_to_object_refuses_without_a_usable_distance(clock, monkeypatch):
     goals = []
-    monkeypatch.setattr(pt.NavigateToPoseBlockingTool, "_run", lambda self, **kw: goals.append(kw) or "sent")
+    monkeypatch.setattr(pt.GoToObjectTool, "_navigate", _capture(goals))
     connector = make_connector(clock, depth_arr=np.zeros((240, 424)))
     _service(connector, [_detection("ball", CX_C, CY_C, 40, 40)])
 
@@ -257,3 +264,66 @@ def test_go_to_object_refuses_without_a_usable_distance(clock, monkeypatch):
 
     assert "not detected with a usable distance" in out
     assert goals == []
+
+
+# --- go_to_object: the goal goes through _TimedNavMixin, with its guards -------------------
+
+
+def _centred_ball(clock, monkeypatch, **connector_kw):
+    """A ball 3 m ahead of a robot at the map origin, with `_navigate` left
+    real: the fake ActionClient from test_nav_timeout is what it reaches."""
+    from builtin_interfaces.msg import Time
+
+    connector = make_connector(clock, **connector_kw)
+    _robot_at_origin(connector)
+    # _TimedNavMixin._goal stamps a real PoseStamped, which rejects a MagicMock.
+    connector.node.get_clock.return_value.now.return_value.to_msg.return_value = Time()
+    _service(connector, [_detection("ball", CX_C, CY_C, 40, 40)])
+    monkeypatch.setattr(limits, "NAV_GOAL_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(nav_tools, "NAV_SERVER_TIMEOUT_S", 0.05)
+    return connector
+
+
+def test_go_to_object_refuses_a_goal_outside_the_workspace_before_any_client_is_made(clock, monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("ActionClient must not be created")
+
+    monkeypatch.setattr(nav_tools, "ActionClient", boom)
+    # The default 8 m box cannot be left with a valid (< 6 m) depth return
+    # from the origin, so shrink it under the ~2.3 m goal.
+    monkeypatch.setattr(limits, "WORKSPACE_MAX", (1.0, 1.0, 1.0))
+    connector = _centred_ball(clock, monkeypatch)
+
+    out = _goto(connector)._run("ball")
+
+    assert "outside the workspace" in out and "refused" in out
+    assert nav_tools._ACTIVE["handle"] is None
+
+
+def test_go_to_object_refuses_when_the_nav_action_is_not_writable(clock, monkeypatch):
+    monkeypatch.setattr(nav_tools, "ActionClient", lambda *a, **k: pytest.fail("no client"))
+    connector = _centred_ball(clock, monkeypatch)
+    perms = {**_permissions(), "writable": list(limits.WRITABLE_TOPICS)}
+    tool = GoToObjectTool(connector=connector, frame_id=limits.MAP_FRAME, action_name=limits.NAV_ACTION, **perms)
+
+    assert "not writable" in tool._run("ball")
+
+
+def test_go_to_object_goal_is_bounded_by_the_nav_timeout_and_cancellable(clock, monkeypatch):
+    seen = []
+
+    class _Handle(_GoalHandle):
+        def get_result_async(self):
+            seen.append(nav_tools._ACTIVE["handle"])  # in flight: cancel_navigation can reach it
+            return super().get_result_async()
+
+    handle = _Handle(_Future(done=False))
+    monkeypatch.setattr(nav_tools, "ActionClient", lambda *a, **k: _ActionClient(handle))
+    connector = _centred_ball(clock, monkeypatch)
+
+    out = _goto(connector)._run("ball")
+
+    assert "timed out" in out and "cancelled" in out
+    assert handle.cancelled == 1
+    assert seen == [handle]
+    assert nav_tools._ACTIVE["handle"] is None

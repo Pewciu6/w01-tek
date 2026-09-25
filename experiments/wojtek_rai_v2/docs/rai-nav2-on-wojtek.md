@@ -1,9 +1,11 @@
 # Nav2 on Wojtek, driven by RAI — plan
 
-Status: N0–N2 done in sim on 2026-09-12 (first Nav2 goal reached; agent
-`go_to_place(hydrant)` → arrival → camera report). N3 (object-grounded goals)
-and N4 (physical robot) open. Lessons learned are in
-`experiments/wojtek_rai_v2/README.md` (Navigation section). Builds on
+Status: N0–N3 done in sim. N0–N2 on 2026-09-12 (first Nav2 goal reached;
+agent `go_to_place(hydrant)` → arrival → camera report); N3 detection-only:
+GroundingDINO on `/detection` in a separate `wojtek_perception` container,
+SAM2 dropped because it does not fit beside the renderer on a 4 GB GPU. N4
+(physical robot) open. Lessons learned are in
+[../README.md](../README.md) (Navigation section). Builds on
 [rai-on-wojtek.md](rai-on-wojtek.md)
 (the working sim demo: RAI ReAct agent → `walk` tool → `text_commander`).
 Goal: the agent gets what RAI's ROSbot demo has — `navigate_to_pose`,
@@ -63,7 +65,7 @@ no `nav_msgs/Odometry`. All Jazzy packages are in apt (verified):
                                                                                   ▲
    text_commander (/wojtek/nav_command) ──── still there for the `walk` tool ─────┘
 
-   sensing:  depth ─► depthimage_to_laserscan ─► /scan ─► slam_toolbox ─► /map, TF map→odom
+   sensing:  depth ─► depth_relay ─► point cloud ─► height slice (base_link) ─► /scan ─► slam_toolbox ─► /map, TF map→odom
                    └► (later) STVL / voxel layer for the local costmap
    odometry: sim  = wojtek_sim_ground_truth TF + small odom_relay (TF → nav_msgs/Odometry)
              real = rtabmap rgbd_odometry (D435, on the PC)  → TF odom→base_link + /odom
@@ -89,7 +91,15 @@ Design decisions:
   odometry source (N4).
 - **Controller: Regulated Pure Pursuit first**, holonomic off, `vx` 0.15–
   0.5 m/s, `wz` ≤ 0.8 rad/s, `min_vel_x 0.15` (below that the gait does
-  not step cleanly). MPPI later if RPP hunts on a legged base.
+  not step cleanly). MPPI later if RPP hunts on a legged base. *Done as*
+  RPP with `desired_linear_vel` 0.3 (the real-robot cap; the same
+  `nav2.yaml` serves sim and hardware), no `min_vel_x` (velocity_smoother
+  `min_velocity` x 0.0, `min_approach_linear_velocity` 0.15),
+  `rotate_to_heading_angular_vel` 0.6, `max_angular_accel` 10.0 /
+  `rotational_acc_lim` 10.0 (effectively off: RPP clamps its command to
+  measured speed ± accel·dt, and the gait's ~0.2 rad/s dead band keeps the
+  measured `wz` at zero, so an accel-limited command never left the dead
+  band) and `min_rotational_vel` 0.4; see the README, Navigation.
 - **A `cmd_vel_watchdog` node** sits between Nav2 and the robot: republishes
   `/cmd_vel_nav` as `/cmd_vel`, zeroes it 0.5 s after the last message.
   `policy_node` has no dead-man of its own; this is the safety piece that
@@ -150,6 +160,12 @@ Design decisions:
   of the object.
 - Acceptance: "go to the ball" with no registry entry: detection → pose →
   Nav2 → stops 0.4–0.6 m from the ball (sim ground truth), 3/3.
+- *Done as* detection only (GroundingDINO, no SAM) in its own container,
+  `docker/perception.Dockerfile` / `run.sh perception`, because SAM2-large
+  next to the simulator's renderer overflows a 4 GB GPU; own
+  `find_objects` / `go_to_object` tools instead of RAI's, with the colour
+  box projected through the depth intrinsics; goal 0.6 m in front of the
+  object; measured position error 8 cm in the sim.
 
 ### N4 — the physical robot (1 week, human-authorized, separate go)
 
@@ -177,7 +193,7 @@ Design decisions:
 | risk | handling |
 |---|---|
 | Narrow depth FOV: costmap blind to the sides while turning | `spin` before long plans, observation persistence 5 s, conservative inflation; later STVL from the point cloud |
-| Gait vs. controller: policy does not walk cleanly below ~0.15 m/s or with rapid sign flips | RPP with `min_vel_x`, `max_angular_accel` low, `use_rotate_to_heading` on; measure tracking error in sim before touching MPPI |
+| Gait vs. controller: policy does not walk cleanly below ~0.15 m/s or with rapid sign flips | RPP with `use_rotate_to_heading` on; `max_angular_accel` ended up effectively off (see the controller note above: with the gait's dead band an accel-limited turn command never starts); measure tracking error in sim before touching MPPI |
 | No dead-man in `policy_node` | `cmd_vel_watchdog` in the loop from N1 on; never bypass it on the real robot |
 | Real odometry (visual) drifts or loses track on a plain floor | EKF fallback with leg odometry; SLAM loop closure; accept mapping-only for the first session |
 | WiFi bandwidth for depth + colour | depth 424×240 raw (3 MB/s) fine; colour compressed and downscaled |

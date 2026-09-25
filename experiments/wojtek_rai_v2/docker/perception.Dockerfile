@@ -4,7 +4,10 @@
 # rai_perception from the pinned upstream commit (0.3.0 is not on PyPI).
 #
 #   ./experiments/wojtek_rai_v2/run.sh perception build
-FROM wojtek_rai:jazzy
+#
+# `wojtek_rai` is the agent service's image, wired in as a build context by
+# compose.yaml (additional_contexts), so Compose builds it first.
+FROM wojtek_rai
 
 ARG RAI_GIT_SHA=6802d40
 # torchvision <0.19 (rai_perception's pin) requires torch 2.3.1 exactly.

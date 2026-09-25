@@ -192,13 +192,6 @@ def main() -> None:
         )
         result = run_turn(graph, history, events)
         live.finish(result.final_text)
-        # The Ollama tunnel flaps. When the model call dies after tools have
-        # already moved the robot, run_turn still returns the completed
-        # tool_call/ToolMessage pairs (with a placeholder AIMessage closing
-        # the turn); keep them so the next turn knows what the robot did.
-        error = getattr(result, "error", "")
-        if error:
-            st.error(f"LLM call failed: {error} -- the tool results above did run.")
     st.session_state.messages = result.messages
 
 

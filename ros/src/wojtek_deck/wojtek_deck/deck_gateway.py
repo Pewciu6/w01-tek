@@ -578,24 +578,36 @@ class Server:
         there), so a restart mid-stand would leave every joint offset
         wrong. What makes this necessary at all: after a motor power cycle
         under a running controller the drives come back idle, keep
-        answering on CAN, and nothing re-enables them. The gateway is a
-        separate process, so the panel stays up and shows the stack coming
-        back.
+        answering on CAN, and nothing re-enables them. On the robot the
+        gateway is a node of the same launch, so the restart takes this
+        process down with the stack: the page sees the socket close and
+        reconnects by itself once the service is back. A success verdict
+        could therefore never reach the panel; what it gets instead is a
+        message sent, and flushed, before systemctl is spawned. A refusal
+        (sudo, a bad unit name) exits before anything stops, so that
+        verdict does arrive.
         """
-        def verdict(success, message):
-            self._broadcast({"t": "svc", "key": "restart_stack", "value": None,
-                             "success": success, "message": message})
+        async def verdict(success, message):
+            msg = json.dumps({"t": "svc", "key": "restart_stack",
+                              "value": None, "success": success,
+                              "message": message})
+            # Awaited rather than through _broadcast: that only schedules
+            # the sends, and a SIGTERM may come before they run.
+            await asyncio.gather(*(ws.send_str(msg) for ws in list(self.clients)
+                                   if not ws.closed), return_exceptions=True)
 
         unit = self.node.stack_unit()
         if not unit:
-            verdict(False, "no control stack unit configured")
+            await verdict(False, "no control stack unit configured")
             return
         ok, why = self.node.lying()
         if not ok:
-            verdict(False, why)
+            await verdict(False, why)
             return
         self.gate.stop(self.loop.time())
         self.node.get_logger().warning(f"restarting {unit} on the panel's request")
+        await verdict(True, f"restart requested; LINK drops and the panel "
+                            f"reconnects when {unit} is back, ~30 s")
         try:
             proc = await asyncio.create_subprocess_exec(
                 "sudo", "-n", "systemctl", "restart", unit,
@@ -603,13 +615,11 @@ class Server:
                 stderr=asyncio.subprocess.PIPE)
             _, err = await asyncio.wait_for(proc.communicate(), timeout=90)
         except Exception as e:  # noqa: BLE001 -- report, never crash the loop
-            verdict(False, f"restart failed: {e}")
+            await verdict(False, f"restart failed: {e}")
             return
-        if proc.returncode == 0:
-            verdict(True, f"{unit} restarted; the stack comes up in ~30 s")
-        else:
-            verdict(False, f"systemctl exited {proc.returncode}: "
-                           f"{err.decode(errors='replace').strip()[:120]}")
+        if proc.returncode != 0:
+            await verdict(False, f"systemctl exited {proc.returncode}: "
+                                 f"{err.decode(errors='replace').strip()[:120]}")
 
     # -- periodic tasks ----------------------------------------------------
     async def drive_tick(self):
