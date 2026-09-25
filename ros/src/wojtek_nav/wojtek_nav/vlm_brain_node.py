@@ -121,7 +121,7 @@ class VlmBrainNode(Node):
         raise RuntimeError("no fresh colour frame")
 
     def status(self, **kw):
-        kw.update(step=self.step_no, instruction=self.instruction)
+        kw.update(step=self.step_no, instruction=self.instruction, t=round(time.time(), 2))
         self.pub_status.publish(String(data=json.dumps(kw, ensure_ascii=False)))
         self.get_logger().info(json.dumps(kw, ensure_ascii=False))
 

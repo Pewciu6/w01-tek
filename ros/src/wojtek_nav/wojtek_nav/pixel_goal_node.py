@@ -89,7 +89,10 @@ class PixelGoalNode(Node):
         # Picture-to-depth pairing tolerance. The sim's two streams run on
         # separate timers (~67 ms apart at worst); the D435 pairs them.
         p("max_skew_s", 0.1)
-        p("ring_s", 4.0)
+        # How far back a picture may be: the model's answer comes seconds after
+        # the picture, a cold model (first call) took 10 s in the sim. 15 s of
+        # 424x240 depth at 15 Hz is ~45 MB.
+        p("ring_s", 15.0)
         p("repeat_s", 1.0)
         p("blocked_hold_s", 5.0)
         p("max_goal_s", 60.0)
