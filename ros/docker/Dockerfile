@@ -57,6 +57,11 @@ RUN apt-get update && \
     (rosdep init || true) && \
     rosdep update --rosdistro "$ROS_DISTRO" && \
     rosdep install --from-paths src -y -i && \
+    # pip refuses to replace Debian's idna (no RECORD file) when a wheel
+    # below asks for a newer one, and aborts the whole install; putting a
+    # pip-owned idna in first ends that. Seen on a fresh ros:jazzy-ros-core
+    # on 2026-09-25 (the experiment images work around it with a venv).
+    pip3 install --break-system-packages --ignore-installed idna && \
     pip3 install --break-system-packages mujoco huggingface_hub pupil-apriltags && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
