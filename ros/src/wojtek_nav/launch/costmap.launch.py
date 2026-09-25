@@ -123,6 +123,21 @@ def _setup(context, *args, **kwargs):
                 prefix=prefix,
             )
         )
+        # The VLM's pixel -> goto's setpoint (wojtek_nav/pixel_goal.py). It
+        # reads the same raw depth stream the costmap does and hands goto a
+        # setpoint in odom, so it belongs to goto's session, not the map's.
+        actions.append(
+            Node(
+                package=PKG,
+                executable="pixel_goal_node",
+                output="screen",
+                parameters=[{
+                    "depth_topic": arg("depth_topic"),
+                    "depth_info_topic": arg("depth_info_topic"),
+                }],
+                prefix=prefix,
+            )
+        )
     return actions
 
 

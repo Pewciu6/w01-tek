@@ -18,11 +18,12 @@ setup(
     zip_safe=True,
     maintainer="Jakub Chmielewski",
     maintainer_email="kchmielewski707@gmail.com",
-    description="Local perception for navigation: the rolling costmap around the robot.",
+    description="Navigation: the rolling costmap, the goto setpoint driver and the pixel-goal resolver.",
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
             "goto_node = wojtek_nav.goto_node:main",
+            "pixel_goal_node = wojtek_nav.pixel_goal_node:main",
         ],
     },
 )

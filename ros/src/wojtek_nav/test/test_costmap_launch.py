@@ -80,24 +80,41 @@ def test_setup_is_decimate_deproject_costmap_then_goto(launch_mod):
     assert all(isinstance(n, Node) for n in nodes)
     assert _executables(nodes) == [
         "crop_decimate_node", "point_cloud_xyz_node", "nav2_costmap_2d", "goto_node",
+        "pixel_goal_node",
     ]
 
 
 def test_goto_can_be_left_out(launch_mod):
     nodes = launch_mod._setup(_context(goto="false"))
     assert "goto_node" not in _executables(nodes)
+    # The pixel resolver only makes sense with goto to drive its setpoints.
+    assert "pixel_goal_node" not in _executables(nodes)
+
+
+def _by_executable(nodes, name):
+    return next(n for n in nodes if _executables([n]) == [name])
 
 
 def test_goto_gets_the_dead_man(launch_mod):
     ctx = _context(goal_timeout="2.5")
-    goto = launch_mod._setup(ctx)[-1]
+    goto = _by_executable(launch_mod._setup(ctx), "goto_node")
     assert _params(goto, ctx)[0]["goal_timeout"] == pytest.approx(2.5)
+
+
+def test_pixel_goal_reads_the_costmaps_depth_stream(launch_mod):
+    ctx = _context(depth_topic="/d/image", depth_info_topic="/d/info")
+    node = _by_executable(launch_mod._setup(ctx), "pixel_goal_node")
+    params = _params(node, ctx)[0]
+    assert params["depth_topic"] == "/d/image"
+    assert params["depth_info_topic"] == "/d/info"
 
 
 def test_decimation_one_skips_the_decimator(launch_mod):
     ctx = _context(decimation="1")
     nodes = launch_mod._setup(ctx)
-    assert _executables(nodes) == ["point_cloud_xyz_node", "nav2_costmap_2d", "goto_node"]
+    assert _executables(nodes) == [
+        "point_cloud_xyz_node", "nav2_costmap_2d", "goto_node", "pixel_goal_node",
+    ]
     # The deprojector then reads the camera directly.
     remaps = _remaps(nodes[0], ctx)
     assert remaps["image_rect"] == "/camera/camera/depth/image_rect_raw"
