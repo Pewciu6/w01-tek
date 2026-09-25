@@ -25,6 +25,24 @@ place -> 0.16 m position wander, yaw 0.1 deg; 8 m mixed arc -> **2.7 %**
 drift, yaw exact. Yaw is the IMU's, so on the real robot expect the
 ESKF's yaw drift on top of these numbers.
 
+**The contact thresholds are the stiff gait's, and the robot's pinned
+policy is not that gait.** Measured 2026-09-25 in the same simulator with
+`wojtek-quiet-locomotion` (kp=20, the tau_ff head; the default a bringup
+runs): on a 6 s straight walk the odometry reports **0.55** of the true
+distance. The debug stream shows why: in 30 % of the samples no foot
+passes as stance (knee |tau| median 1.2 N*m against the 0.8 floor, and
+the soft servo unloads the knee more often), so the velocity reads zero
+between steps. Lowering `contact_tau_floor` to 0.3 brings zero-stance
+samples to 2 % but the ratio only to **0.64**: the quiet gait lifts its
+feet little, so swing feet stay within `contact_z_delta` (3 mm) of the
+lowest one and get averaged in as stance, diluting the estimate. The
+thresholds need fitting per gait (ground truth in the sim, as before),
+or a contact criterion that does not depend on the servo's stiffness.
+Two more things the same session showed: a foot pushing against an
+obstacle integrates as travel (15 s against a crate read as 1.5 m), and
+every ~160 deg turn in place added ~0.1 m of position error on the stiff
+gait while straight walking stayed under 2 %.
+
 Outputs `/wojtek/odom` (nav_msgs/Odometry, twist in base frame) and
 `/wojtek/odom/debug` (`[4x knee |tau|, 4x stance flag]`, for threshold
 tuning). TF `odom->base_link` with `publish_tf:=true`: the bringup's
