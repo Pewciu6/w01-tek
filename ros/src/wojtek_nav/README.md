@@ -160,11 +160,55 @@ of the 15-degree-down camera's view, so ask for `done`/`turn` there, not a
 pixel; a setpoint whose straight line clips an obstacle is goto's known
 limit -- the VLM must hand over the way round as the next pixel.
 
+## The brain (`vlm_brain_node`)
+
+The loop on top: a user's instruction in, an exploration until the target
+is seen, never a guessed goal. The policy is `wojtek_nav/vlm_brain.py`
+(pure, desk-tested); the node talks to any OpenAI-compatible endpoint with
+JSON-schema structured output (vLLM, Ollama) and to the two nodes above.
+
+```
+ros2 run wojtek_nav vlm_brain_node --ros-args \
+    -p instruction:="podejdź do fioletowego słupa" \
+    -p url:=http://127.0.0.1:11434/v1 -p model:=qwen3-vl:30b-a3b-instruct
+```
+
+Every step: a fresh colour frame → the model answers `goal` (a pixel) /
+`turn` / `not_visible` / `done` under the schema → a `goal` is **verified**
+with a second yes/no question that repeats the task (kind, colour, size)
+→ only then the pixel goes to `pixel_goal_node`. `not_visible` turns 45°
+and looks again; after a full circle it steps 1 m forward. A target
+beyond the depth window (`no_depth`) is approached 1 m and looked at
+again; a `blocked` approach or goal turns instead of pushing the same
+answer. **Arrival is the executive's call**: `done` when goto reached the
+setpoint and the resolved object point is within `done_within_m` (1.1 m);
+the model's own `done` is not trusted (a thin pillar never "fills the
+view"). Status JSON on `/wojtek/vlm/status`, the picture with the model's
+point on `/wojtek/vlm/annotated`; a new task on `/wojtek/vlm/instruction`
+replaces the running one.
+
+Measured (sim, 2026-09-25, `scene_nav.xml`, qwen3-vl:30b-a3b-instruct on
+Ollama on the DGX): "podejdź do fioletowego słupa" from a pose facing
+away: 4 turns, then goal → `reached` in 25 s. "podejdź do niskiej
+pomarańczowej skrzynki" from behind the pillar: 6 steps, 55 s, the robot
+stopped 0.8 m from the box; on the way the model twice took the big
+orange crate for the low box (both orange) and the first approach ran
+into the pillar's costmap halo -- the verification and the turn-after-
+block are what got it out. Per call: pointing 1.1-1.5 s, verify 0.2 s.
+
+`scripts/point_bench.py` is the offline pointing benchmark behind the
+model choice: nine sim frames with the objects' true pixels and depth,
+per-object queries and absent-object queries, scored in metres through
+the same maths as the resolver. On it qwen3-vl 8B (vLLM, bf16) and
+30B-A3B (Ollama, Q4) point equally well (median 0.15-0.18 m); the 30B-A3B
+invented a "chair" on the only visible box in 4 of 9 absent cases, the 8B
+in 0-1 -- the reason the loop verifies before it moves.
+
 ## Next
 
-The VLM client itself (picture in, pixel out, on the DGX) publishing
-`/wojtek/nav/pixel_goal`, with the 0-1000 adapter and a `done`/`turn`
-escape. Then: negative obstacles (a hole or a step down is *missing* floor, which
+The verification prompt against look-alikes (the crate/low-box case), a
+larger pointing set with masks, and an A/B of the 8B on vLLM (FP8) as the
+brain's model. Then: negative obstacles (a hole or a step down is *missing* floor, which
 this costmap reads as unknown, not as danger) and the step-height decision
 for a legged robot (the 0.15 m box is a wall here; whether it should be is
 the policy's business).
